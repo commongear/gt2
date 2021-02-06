@@ -1,6 +1,8 @@
-This work was written by commongear, based on knowledge gathered by, and
-inspired by the excellent work of [pez2k](https://github.com/pez2k/gt2tools)
-and [adeyblue](https://github.com/adeyblue/GTVolTools).
+This work was written by [commongear](https://github.com/commongear). The
+research is original, or based on knowledge gathered by
+[pez2k](https://github.com/pez2k/gt2tools),
+[adeyblue](https://github.com/adeyblue/GTVolTools), and the rest of the
+community.
 
 Right now it handles a subset of GT2 files, but I might consider extending it
 to new file types or titles with similar formats. It consists of:

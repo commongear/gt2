@@ -1,0 +1,1 @@
+Copy models (.json, .obj, .mtl, .png) here from the GT2 extractor.

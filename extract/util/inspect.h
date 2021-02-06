@@ -11,13 +11,16 @@
 
 namespace gt2 {
 
+// Pass this as the 'num_spaces' template param to split the output into lines.
+constexpr int kSplitLines = -1;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Write varargs to ostream.
 ////////////////////////////////////////////////////////////////////////////////
 
-// Calls os::operator<< on all arguments and returns the ostream.
+// Recursive template to call os::operator<< on all arguments.
 template <int>
-inline std::ostream& WriteToOstream(std::ostream& os) {
+std::ostream& WriteToOstream(std::ostream& os) {
   return os;
 }
 template <int, typename T>
@@ -27,6 +30,7 @@ std::ostream& WriteToOstream(std::ostream& os, T&& arg) {
 template <int num_spaces = 0, typename T, typename... U>
 std::ostream& WriteToOstream(std::ostream& os, T&& arg, U&&... rest) {
   os << arg;
+  if constexpr (num_spaces < 0) os << "\n";
   for (int i = 0; i < num_spaces; ++i) os << " ";
   return WriteToOstream<num_spaces>(os, rest...);
 }
@@ -79,25 +83,26 @@ inline std::string ToHex(const std::vector<T>& data) {
 
 // Calls ostream::operator<< on the arguments and concatenates the result.
 template <int num_spaces = 0, typename... T>
-std::string ToString(T&&... args) {
+std::string StrCat(T&&... args) {
   std::stringstream ss;
   WriteToOstream<num_spaces>(ss, args...);
   return ss.str();
 }
 
-// Calls ostream::operator<< on the arguments and concatenates the result.
+// Calls ostream::operator<< on the elements and concatenates the result.
 template <int num_spaces = 1, typename T>
-std::string ToString(const std::vector<T>& v) {
+std::string ToString(const T* v, int64_t n) {
   std::stringstream ss;
-  const int64_t n = v.size();
   if (n) {
     if constexpr (sizeof(T) == 1) {
-      ss << static_cast<int>(v.front());
+      ss << static_cast<int>(v[0]);
     } else {
-      ss << v.front();
+      ss << v[0];
     }
     for (int i = 1; i < n; ++i) {
-      if constexpr (num_spaces) {
+      if constexpr (num_spaces < 0) {
+        ss << "\n";
+      } else if constexpr (num_spaces) {
         ss << std::string(num_spaces, ' ');
       }
       if constexpr (sizeof(T) == 1) {
@@ -108,6 +113,18 @@ std::string ToString(const std::vector<T>& v) {
     }
   }
   return ss.str();
+}
+
+// Calls ostream::operator<< on the elements and concatenates the result.
+template <int num_spaces = 1, typename T, size_t N>
+std::string ToString(const T (&data)[N]) {
+  return ToString<num_spaces>(data, N);
+}
+
+// Calls ostream::operator<< on the elements and concatenates the result.
+template <int num_spaces = 1, typename T>
+std::string ToString(const std::vector<T>& v) {
+  return ToString<num_spaces>(v.data(), v.size());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -164,39 +181,39 @@ bool IsZero(const T& v) {
 #define STR(a) #a
 
 // Checks if the following is true, converting the arguments to strings.
-#define CHECK(cond, ...)                            \
-  if (!(cond)) {                                    \
-    FAIL(STR(cond), " ", ToString<1>(__VA_ARGS__)); \
+#define CHECK(cond, ...)                          \
+  if (!(cond)) {                                  \
+    FAIL(STR(cond), " ", StrCat<1>(__VA_ARGS__)); \
   }
 
 // Prints the names and values of the operands, separated by the operator.
 #define BINARY_OP_STR(a, op, b) \
-  ToString<1>("", STR(a), op, STR(b), " (", a, op, b, ") ")
+  StrCat<1>("", STR(a), op, STR(b), " (", a, op, b, ") ")
 
 // Checks (in)equality of the operands and prints them on failure.
-#define CHECK_EQ(a, b, ...)                                    \
-  if (!((a) == (b))) {                                         \
-    FAIL(BINARY_OP_STR(a, "==", b), ToString<1>(__VA_ARGS__)); \
+#define CHECK_EQ(a, b, ...)                                  \
+  if (!((a) == (b))) {                                       \
+    FAIL(BINARY_OP_STR(a, "==", b), StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_NE(a, b, ...)                                    \
-  if (!((a) != (b))) {                                         \
-    FAIL(BINARY_OP_STR(a, "!=", b), ToString<1>(__VA_ARGS__)); \
+#define CHECK_NE(a, b, ...)                                  \
+  if (!((a) != (b))) {                                       \
+    FAIL(BINARY_OP_STR(a, "!=", b), StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_LE(a, b, ...)                                    \
-  if (!((a) <= (b))) {                                         \
-    FAIL(BINARY_OP_STR(a, "<=", b), ToString<1>(__VA_ARGS__)); \
+#define CHECK_LE(a, b, ...)                                  \
+  if (!((a) <= (b))) {                                       \
+    FAIL(BINARY_OP_STR(a, "<=", b), StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_GE(a, b, ...)                                    \
-  if (!((a) >= (b))) {                                         \
-    FAIL(BINARY_OP_STR(a, ">=", b), ToString<1>(__VA_ARGS__)); \
+#define CHECK_GE(a, b, ...)                                  \
+  if (!((a) >= (b))) {                                       \
+    FAIL(BINARY_OP_STR(a, ">=", b), StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_LT(a, b, ...)                                   \
-  if (!((a) < (b))) {                                         \
-    FAIL(BINARY_OP_STR(a, "<", b), ToString<1>(__VA_ARGS__)); \
+#define CHECK_LT(a, b, ...)                                 \
+  if (!((a) < (b))) {                                       \
+    FAIL(BINARY_OP_STR(a, "<", b), StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_GT(a, b, ...)                                   \
-  if (!((a) > (b))) {                                         \
-    FAIL(BINARY_OP_STR(a, ">", b), ToString<1>(__VA_ARGS__)); \
+#define CHECK_GT(a, b, ...)                                 \
+  if (!((a) > (b))) {                                       \
+    FAIL(BINARY_OP_STR(a, ">", b), StrCat<1>(__VA_ARGS__)); \
   }
 
 }  // namespace gt2

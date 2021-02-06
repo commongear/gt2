@@ -6,6 +6,8 @@
 
 #include <cstring>
 
+#include "./inspect.h"
+
 namespace gt2 {
 
 template <typename T>
@@ -23,7 +25,7 @@ union Vec2 {
 
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Vec2<T> v) {
-  return os << std::vector<T>(v.data, v.data + 2);
+  return os << "[" << ToString(v.data) << "]";
 }
 
 template <typename T>
@@ -106,7 +108,7 @@ union Vec4 {
 
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Vec4<T> v) {
-  return os << std::vector<T>(v.data, v.data + 4);
+  return os << "[" << ToString(v.data) << "]";
 }
 
 }  // namespace gt2

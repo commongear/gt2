@@ -5,6 +5,7 @@
 #include <iostream>
 #include <regex>
 
+#include "car.h"
 #include "util/gzip.h"
 #include "util/io.h"
 #include "vol.h"
@@ -14,6 +15,9 @@ namespace miniz {
 }
 
 using namespace gt2;
+
+// If 'true', GZip files will be unpacked when extracting from the vol.
+constexpr bool kAutoUnpackGz = true;
 
 // Prints the usage message.
 void PrintUsage() {
@@ -50,7 +54,7 @@ void GetFiles(FileInStream& s, const Vol& vol, const std::string& out_path,
     const std::string path = vol.PathOf(f);
     const std::string full_name = path + std::string(f.name());
     if (std::regex_match(full_name, regex)) {
-      if (EndsWith(full_name, ".gz")) {
+      if (kAutoUnpackGz && EndsWith(full_name, ".gz")) {
         // Extract GZipped files.
         StringInStream zipped(f.ReadContents(s));
         const GzipMember z = GzipMember::FromStream(zipped);
@@ -60,12 +64,55 @@ void GetFiles(FileInStream& s, const Vol& vol, const std::string& out_path,
         out_full_name.resize(out_full_name.size() - 3);
         Save(z.inflated, out_full_name);
 
-        std::cout << "Unzipped " << out_full_name << std::endl;
+        std::cout << "Unzipped and wrote " << out_full_name << std::endl;
       } else {
         // Write other files.
         const std::string out_full_name = out_path + full_name;
         Save(f.ReadContents(s), out_full_name);
         std::cout << "Wrote " << out_full_name << std::endl;
+      }
+    }
+  }
+}
+
+// Pring what we understand about the file structure.
+void InspectFiles(FileInStream& s, const Vol& vol, const std::string& pattern) {
+  const std::regex regex(pattern);
+  for (const auto& f : vol.files) {
+    const std::string path = vol.PathOf(f);
+
+    std::string full_name = path + std::string(f.name());
+    if (std::regex_match(full_name, regex)) {
+      std::cout << std::left << std::setw(12) << path << f << std::endl;
+
+      // This is what's in the file.
+      StringInStream file;
+
+      // Extract GZ or read bare files.
+      if (EndsWith(full_name, ".gz")) {
+        // Extract GZipped files.
+        StringInStream zipped(f.ReadContents(s));
+        GzipMember z = GzipMember::FromStream(zipped);
+        file = StringInStream(std::move(z.inflated));
+
+        // Drop the '.gz' from the name, then save.
+        full_name.resize(full_name.size() - 3);
+
+        std::cout << "Unzipped " << full_name << std::endl;
+      } else {
+        file = StringInStream(f.ReadContents(s));
+        std::cout << "Read " << full_name << std::endl;
+      }
+
+      // Print information about 
+      if (EndsWith(full_name, ".cdo") || EndsWith(full_name, ".cno")) {
+        ObjectFile c = ObjectFile::FromStream(file);
+        std::cout << c << std::endl;
+      } else if (EndsWith(full_name, ".cdp") || EndsWith(full_name, ".cdo")) {
+        Picture c = Picture::FromStream(file);
+        std::cout << c << std::endl;
+      } else {
+        std::cout << "We don't know much about this file yet..." << std::endl;
       }
     }
   }
@@ -108,6 +155,15 @@ int main(int argc, char** argv) {
     const std::string out_path(argv[3]);
     const std::string pattern(argv[4]);
     GetFiles(s, vol, out_path, pattern);
+  } else if (command == "inspect") {
+    // Get better information about files.
+    if (argc <= 3) {
+      std::cerr << "\nNeed a regex-pattern.\n" << std::endl;
+      PrintUsage();
+      return -1;
+    }
+    const std::string pattern(argv[3]);
+    InspectFiles(s, vol, pattern);
   } else {
     // Fail.
     std::cerr << "Unknown command '" << command << "'" << std::endl;

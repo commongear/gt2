@@ -5,9 +5,10 @@
 #define GT2_EXTRACT_IMAGE_H_
 
 namespace miniz {
-#include "3p/miniz/miniz.h"
+#include "../3p/miniz/miniz.h"
 }
 
+#include "inspect.h"
 #include "vec.h"
 
 namespace gt2 {
@@ -50,7 +51,8 @@ struct Image {
   uint8_t& at(int x, int y) { return pixels[x + y * width]; }
   const uint8_t& at(int x, int y) const { return pixels[x + y * width]; }
 
-  // Draws a line.
+  // Draws a line between pixel coordinates 'a' and 'b'.
+  // No bounds checking.
   template <typename T>
   void DrawLine(const Vec2<T> a, const Vec2<T> b, uint8_t value) {
     struct Setter {
@@ -61,7 +63,9 @@ struct Image {
     ::gt2::DrawLine(a, b, s);
   }
 
-  // Draws a filled triangle (no specific vertex ordering required).
+  // Draws a filled triangle between pixel coordinates 'a', 'b', and 'c'.
+  // No specific vertex ordering required.
+  // No bounds checking.
   template <typename T>
   void DrawTriangle(const Vec2<T> a, const Vec2<T> b, const Vec2<T> c,
                     uint8_t value) {
@@ -91,7 +95,7 @@ struct Image {
 
   // Flood fills an enclosed area starting at 'p'.
   void Fill(const Vec2<float> p, uint8_t value) {
-    ASSERT(channels == 1);
+    CHECK_EQ(channels, 1);
     const int w = width;
     const int size = w * height;
     const int x = static_cast<int>(p.x + 0.5f);
@@ -117,12 +121,17 @@ struct Image {
     }
   }
 
-  // Expands pixels at the boundaries of 'mask' with their nearest neighbor.
+  // Expands masked areas in the image by one pixel.
+  // For each pair of adjacent pixels (a, b):
+  //  - If mask(a) is '255' and mask(b) is '0':
+  //     - Copy the pixel value from 'a' to 'b'.
+  //     - Set mask(b) = 255.
+  // Returns 'true' if any pixels were changed.
   bool GrowBorders(Image& mask) {
-    ASSERT(channels == 1);
-    ASSERT(width == mask.width);
-    ASSERT(height == mask.height);
-    ASSERT(channels == mask.channels);
+    CHECK_EQ(channels, 1);
+    CHECK_EQ(width, mask.width);
+    CHECK_EQ(height, mask.height);
+    CHECK_EQ(channels, mask.channels);
 
     const int w = width;
     const int h = height;

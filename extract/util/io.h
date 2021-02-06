@@ -45,8 +45,8 @@ inline void Save(const std::string& buffer, const std::string& path) {
 }
 
 // NOTE: I implemented these streams because the C++ std library versions copy
-// everything incessantly. These versions still copy some things, albeit
-// somewhat less.
+// everything incessantly and have a clunky interface. These versions still copy
+// some things, albeit somewhat less, and with more readable code.
 
 // An input stream backed by an in-memory string.
 class StringInStream {

@@ -52,6 +52,7 @@ void GetFiles(FileInStream& s, const Vol& vol, const std::string& out_path,
         StringInStream zipped(f.ReadContents(s));
         const GzipMember z = GzipMember::FromStream(zipped);
 
+        // Drop the '.gz' from the name, then save.
         std::string out_full_name = out_path + full_name;
         out_full_name.resize(out_full_name.size() - 3);
         Save(z.inflated, out_full_name);
@@ -74,7 +75,9 @@ int main(int argc, char** argv) {
     return -1;
   }
 
+  // Read the VOL.
   FileInStream s(argv[1]);
+  CHECK(s.ok(), "Failed to open '", argv[1], "'");
   const Vol vol = Vol::FromStream(s);
   std::cout << "Read vol file " << vol.total_size << " bytes." << std::endl;
 
@@ -94,13 +97,13 @@ int main(int argc, char** argv) {
     ListFiles(vol, pattern);
   } else if (command == "get") {
     // Pull files out of the VOL.
-    if (argc <= 3) {
-      std::cerr << "\nNeed an output path.\n" << std::endl;
+    if (argc <= 4) {
+      std::cerr << "\nNeed output-path and regex-pattern.\n" << std::endl;
       PrintUsage();
       return -1;
     }
     const std::string out_path(argv[3]);
-    const std::string pattern(argc > 4 ? argv[4] : ".*");
+    const std::string pattern(argv[4]);
     GetFiles(s, vol, out_path, pattern);
   } else {
     // Fail.

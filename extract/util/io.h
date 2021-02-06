@@ -16,7 +16,7 @@ namespace gt2 {
 // Loads an entire file.
 inline std::string Load(const std::string& path) {
   std::ifstream s(path, std::ios::in | std::ios::binary);
-  CHECK(s.good(), "Failed to open for read", path);
+  CHECK(s.good(), "Failed to open for read '", path, "'");
 
   s.seekg(0, std::ios::end);
   const int64_t size = s.tellg();
@@ -24,7 +24,7 @@ inline std::string Load(const std::string& path) {
 
   std::string out(size, '\0');
   s.read(const_cast<char*>(out.data()), out.size());
-  CHECK(s.eof(), "Failed to read all of", path);
+  CHECK(s.eof(), "Failed to read all of '", path, "'");
   return out;
 }
 
@@ -34,11 +34,11 @@ inline void Save(const std::string& buffer, const std::string& path) {
       std::filesystem::path(path).parent_path());
 
   std::ofstream s(path, std::ios::out | std::ios::binary);
-  CHECK(s.good(), "Failed to open for write", path);
+  CHECK(s.good(), "Failed to open for write '", path, "'");
 
   s.write(buffer.data(), buffer.size());
   s.flush();
-  CHECK(s.good(), "Failed to write", path);
+  CHECK(s.good(), "Failed to write '", path, "'");
 }
 
 // NOTE: I implemented these streams because the C++ std library versions copy

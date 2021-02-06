@@ -320,7 +320,7 @@ class World {
   }
 
   loadCar(name) {
-    function setCarTexParams(tex) {
+    const setCarTexParams = tex => {
       tex.encoding = THREE.sRGBEncoding;
       tex.magFilter = THREE.NearestFilter;
       tex.minFilter = THREE.NearestFilter;
@@ -333,7 +333,7 @@ class World {
     getJson(
         path + 'o.json',
         result => {
-          // The first skin is loaded from the .mtl.
+          // Skip the first skin. It's loaded from the .mtl.
           for (let i = 1; i < result.palettes; ++i) {
             const tex_path = path + 'p.' + i + '.png';
             const tex = new THREE.TextureLoader().load(tex_path);
@@ -345,7 +345,7 @@ class World {
           console.log('Request failed', code, text);
         });
 
-    // Load the MTL first, otherwise the OBJ doesn't races with the texture...
+    // Load the MTL first, otherwise the OBJ load races with the texture load...
     new MTLLoader().load(path + 'o.mtl', m => {
       const objLoader = new OBJLoader();
       objLoader.setMaterials(m);

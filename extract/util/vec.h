@@ -1,3 +1,6 @@
+// Copyright (c) 2021 commongear
+// MIT License (see https://github.com/commongear/gt2/blob/master/LICENSE)
+
 #ifndef GT2_EXTRACT_VECTOR_H_
 #define GT2_EXTRACT_VECTOR_H_
 

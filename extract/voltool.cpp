@@ -1,3 +1,6 @@
+// Copyright (c) 2021 commongear
+// MIT License (see https://github.com/commongear/gt2/blob/master/LICENSE)
+
 #include <iomanip>
 #include <iostream>
 #include <regex>

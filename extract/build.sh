@@ -1,3 +1,6 @@
+# Copyright (c) 2021 commongear
+# MIT License (see https://github.com/commongear/gt2/blob/master/LICENSE)
+
 clang++ --std=c++17 -O0 -g -fno-exceptions -Wall -Wextra -Werror \
     -Wno-unused-parameter \
     -Wno-unused-const-variable \

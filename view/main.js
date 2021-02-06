@@ -1,5 +1,8 @@
 'use strict';
 
+// Copyright (c) 2021 commongear
+// MIT License (see https://github.com/commongear/gt2/blob/master/LICENSE)
+
 import {MTLLoader} from './3p/three.js/MTLLoader.js';
 import {OBJLoader} from './3p/three.js/OBJLoader.js';
 import * as THREE from './3p/three.js/three.module.js';

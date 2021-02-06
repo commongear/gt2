@@ -1,6 +1,6 @@
 ![Models](supra_rx7.png)
 
-Obj viewer for GT2 based on threejs.
+Obj viewer for GT2, based on threejs.
 
 To view models from GT2, you'll need [to extract](../extract/) them.
 
@@ -8,7 +8,8 @@ To view models from GT2, you'll need [to extract](../extract/) them.
 
 A static web server is required to run this app. Using address
 [127.0.0.1](https://www.pcmag.com/encyclopedia/term/loopback-address) is
-recommended, as it limits the connections to originate from the local computer.
+recommended, as it limits access to connections originating from the local
+machine.
 
 Install:
 

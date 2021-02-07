@@ -6,6 +6,7 @@
 #include <regex>
 
 #include "car.h"
+#include "car_obj.h"
 #include "util/gzip.h"
 #include "util/io.h"
 #include "vol.h"
@@ -22,6 +23,24 @@ constexpr bool kAutoUnpackGz = true;
 // Prints the usage message.
 void PrintUsage() {
   std::cerr << "Usage:  vol path-to-vol command [regex-pattern]" << std::endl;
+}
+
+// Extracts the contents of an optionally zipped file.
+std::string GetFileContents(FileInStream& s, const Vol::File& f, bool unzip) {
+  if (unzip) {
+    StringInStream file(f.ReadContents(s));
+    return GzipMember::FromStream(file).inflated;
+  } else {
+    return f.ReadContents(s);
+  }
+}
+
+// Scans the index for the file with the given path.
+const Vol::File* FindFile(const Vol& v, std::string_view path) {
+  for (const auto& f : v.files) {
+    if (StrCat(v.PathOf(f), f.name()) == path) return &f;
+  }
+  return nullptr;
 }
 
 // List dirs from the VOL.
@@ -52,30 +71,69 @@ void GetFiles(FileInStream& s, const Vol& vol, const std::string& out_path,
   const std::regex regex(pattern);
   for (const auto& f : vol.files) {
     const std::string path = vol.PathOf(f);
-    const std::string full_name = path + std::string(f.name());
+    std::string full_name = path + std::string(f.name());
     if (std::regex_match(full_name, regex)) {
-      if (kAutoUnpackGz && EndsWith(full_name, ".gz")) {
-        // Extract GZipped files.
-        StringInStream zipped(f.ReadContents(s));
-        const GzipMember z = GzipMember::FromStream(zipped);
-
-        // Drop the '.gz' from the name, then save.
-        std::string out_full_name = out_path + full_name;
-        out_full_name.resize(out_full_name.size() - 3);
-        Save(z.inflated, out_full_name);
-
-        std::cout << "Unzipped and wrote " << out_full_name << std::endl;
+      const bool unzip = kAutoUnpackGz && EndsWith(full_name, ".gz");
+      if (unzip) full_name.resize(full_name.size() - 3);
+      Save(GetFileContents(s, f, unzip), out_path + full_name);
+      if (unzip) {
+        std::cout << "Unzipped and wrote " << full_name << std::endl;
       } else {
-        // Write other files.
-        const std::string out_full_name = out_path + full_name;
-        Save(f.ReadContents(s), out_full_name);
-        std::cout << "Wrote " << out_full_name << std::endl;
+        std::cout << "Wrote " << full_name << std::endl;
       }
     }
   }
 }
 
-// Pring what we understand about the file structure.
+// Extract OBJs for all known model types.
+void GetObjs(FileInStream& s, const Vol& vol, const std::string& out_path,
+             const std::string& pattern) {
+  const std::regex regex(pattern);
+  for (const auto& f : vol.files) {
+    const std::string path = vol.PathOf(f);
+
+    std::string full_name = path + std::string(f.name());
+    if (std::regex_match(full_name, regex)) {
+      const bool unzip = EndsWith(full_name, ".gz");
+      if (unzip) full_name.resize(full_name.size() - 3);
+
+      // Extract cars.
+      if (EndsWith(full_name, ".cdo") || EndsWith(full_name, ".cno")) {
+        full_name.resize(full_name.size() - 1);  // Drop the 'o'.
+
+        // Find the texture.
+        const Vol::File* f_pix = FindFile(vol, full_name + "p.gz");
+        if (!f_pix) {
+          std::cerr << "Failed to find pix file for " << full_name << std::endl;
+          continue;
+        }
+
+        // Read the object and texture data.
+        StringInStream cdo_file(GetFileContents(s, f, unzip));
+        StringInStream cdp_file(GetFileContents(s, *f_pix, unzip));
+
+        // Parse the files.
+        const CarObject cdo = CarObject::FromStream(cdo_file);
+        const CarPix cdp = CarPix::FromStream(cdp_file);
+
+        // Craft the output file base name.
+        const std::string out_name =
+            std::filesystem::path(full_name).filename().generic_string();
+
+        // Write the OBJ data to the output path.
+        SaveObj(cdo, cdp, out_path, out_name);
+        std::cout << "Saved OBJ " << out_path + out_name + "..." << std::endl;
+      } else if (EndsWith(full_name, ".cdp") || EndsWith(full_name, ".cnp")) {
+        std::cout << "Use the .cdo/.cno filename to extract cars: " << full_name
+                  << std::endl;
+      } else {
+        std::cout << "Can't convert " << full_name << std::endl;
+      }
+    }
+  }
+}
+
+// Print what we understand about the file structure.
 void InspectFiles(FileInStream& s, const Vol& vol, const std::string& pattern) {
   const std::regex regex(pattern);
   for (const auto& f : vol.files) {
@@ -84,31 +142,16 @@ void InspectFiles(FileInStream& s, const Vol& vol, const std::string& pattern) {
     std::string full_name = path + std::string(f.name());
     if (std::regex_match(full_name, regex)) {
       std::cout << std::left << std::setw(12) << path << f << std::endl;
+      const bool unzip = EndsWith(full_name, ".gz");
+      if (unzip) full_name.resize(full_name.size() - 3);
 
-      // This is what's in the file.
-      StringInStream file;
-
-      // Extract GZ or read bare files.
-      if (EndsWith(full_name, ".gz")) {
-        // Extract GZipped files.
-        StringInStream zipped(f.ReadContents(s));
-        GzipMember z = GzipMember::FromStream(zipped);
-        file = StringInStream(std::move(z.inflated));
-
-        // Drop the '.gz' from the name, then save.
-        full_name.resize(full_name.size() - 3);
-
-        std::cout << "Unzipped " << full_name << std::endl;
-      } else {
-        file = StringInStream(f.ReadContents(s));
-        std::cout << "Read " << full_name << std::endl;
-      }
-
-      // Print information about 
+      // Print information about known files.
       if (EndsWith(full_name, ".cdo") || EndsWith(full_name, ".cno")) {
+        auto file = StringInStream(GetFileContents(s, f, unzip));
         const CarObject c = CarObject::FromStream(file);
         std::cout << c << std::endl;
-      } else if (EndsWith(full_name, ".cdp") || EndsWith(full_name, ".cdo")) {
+      } else if (EndsWith(full_name, ".cdp") || EndsWith(full_name, ".cnp")) {
+        auto file = StringInStream(GetFileContents(s, f, unzip));
         const CarPix c = CarPix::FromStream(file);
         std::cout << c << std::endl;
       } else {
@@ -155,6 +198,15 @@ int main(int argc, char** argv) {
     const std::string out_path(argv[3]);
     const std::string pattern(argv[4]);
     GetFiles(s, vol, out_path, pattern);
+  } else if (command == "getobjs") {
+    if (argc <= 4) {
+      std::cerr << "\nNeed output-path and regex-pattern.\n" << std::endl;
+      PrintUsage();
+      return -1;
+    }
+    const std::string out_path(argv[3]);
+    const std::string pattern(argv[4]);
+    GetObjs(s, vol, out_path, pattern);
   } else if (command == "inspect") {
     // Get better information about files.
     if (argc <= 3) {

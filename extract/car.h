@@ -321,7 +321,6 @@ std::ostream& operator<<(std::ostream& os, const Model& m) {
 // Stored in a 'cdo' (daytime tracks) or 'cno' (nighttime tracks).
 struct CarObject {
   struct Header {
-    // Wheel dimensions *may* need to be divided by 2 to match car scale.
     struct WheelSize {
       uint16_t radius;
       uint16_t width;
@@ -330,9 +329,8 @@ struct CarObject {
     uint8_t padding[20];  // Should be zero.
     // 0: front wheels. 1: rear wheels.
     WheelSize wheel_size[2];
-    // These are wheel positions. They need to be divided by 2 to match car
-    // scale. (x, y, z) are obvious. (w) is still a mystery.
-    Vec4<int16_t> wheels[4];
+    // These are wheel positions.(x, y, z) are obvious. (w) is still a mystery.
+    Vec4<int16_t> wheel_pos[4];
 
     bool Validate() {
       return std::strncmp(magic, "GT\2\0", 4) == 0 && IsZero(padding);
@@ -426,7 +424,7 @@ std::ostream& operator<<(std::ostream& os, const CarObject::Header& h) {
   os << "magic: " << std::string_view(h.magic, 4)
      << "\nfront_wheel: " << h.wheel_size[0]
      << "\nrear_wheel: " << h.wheel_size[1] << "\nwheel_pos: [\n"
-     << ToString<kSplitLines>(h.wheels) << "\n]\n";
+     << ToString<kSplitLines>(h.wheel_pos) << "\n]\n";
   return os;
 }
 

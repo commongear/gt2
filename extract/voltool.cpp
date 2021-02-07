@@ -20,9 +20,42 @@ using namespace gt2;
 // If 'true', GZip files will be unpacked when extracting from the vol.
 constexpr bool kAutoUnpackGz = true;
 
+static constexpr char kUsage[] =
+"Usage:  voltool path-to-vol command [args...]\n"
+"  path-to-vol:  path and filename of the VOL to load\n"
+"  command:      [dirs, list, get, getobjs, inspect] details below\n"
+"  args...:      command arguments; details below\n"
+"\n"
+"Commands:\n"
+"  dirs\n"
+"    Lists the folders in the VOL.\n"
+"  \n"
+"  list regex-pattern\n"
+"    Lists files with matching path in the VOL.\n"
+"    regex-pattern:  standard c++ regex\n"
+"  \n"
+"    For instance \"voltool list some.VOL '.*'\" lists every file.\n"
+"    \"voltool list some.VOL '.*tsplr.*'\" lists files with 'tsplr' in the "
+"    name.\n"
+"  \n"
+"  inspect regex-pattern\n"
+"    Prints (some of) what this tool knows about the matching files.\n"
+"    regex-pattern:  standard c++ regex\n"
+"  \n"
+"  get output-path regex-pattern\n"
+"    Copies files with matching path from the VOL to the local machine.\n"
+"    output-path:    folder in which to store extracted files\n"
+"    regex-pattern:  standard c++ regex\n"
+"  \n"
+"  getobjs output-path regex-pattern\n"
+"    Converts matching files in the VOL to OBJ format and writes them to the "
+"      given path.\n"
+"    output-path:    folder in which to store extracted files\n"
+"    regex-pattern:  standard c++ regex\n";
+
 // Prints the usage message.
 void PrintUsage() {
-  std::cerr << "Usage:  vol path-to-vol command [regex-pattern]" << std::endl;
+  std::cerr << kUsage << std::endl;
 }
 
 // Extracts the contents of an optionally zipped file.

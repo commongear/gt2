@@ -97,7 +97,8 @@ inline void TransferNormals(std::vector<TexFace>& faces) {
 }
 
 // Writes a model to an OBJ file and updates the counts in 'state'.
-// Multiple models can be written correctly to the same OBJ.
+// Multiple models can be written correctly to the same stream if the ObjState
+// is reused between calls.
 inline void WriteObj(std::ostream& os, ObjState& state, const Model& m,
                      const float scale = 1.f) {
   // Lots of cars have decals with transparency applied to some of the faces.
@@ -230,7 +231,7 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
   wheels.reserve(4);
   for (int i = 0; i < 4; ++i) {
     wheels.push_back({});
-    MakeWheel(cdo.header.wheels[i], cdo.header.wheel_size[i / 2],
+    MakeWheel(cdo.header.wheel_pos[i], cdo.header.wheel_size[i / 2],
               wheels.back());
   }
 

@@ -33,24 +33,31 @@ namespace gt2 {
 ////////////////////////////////////////////////////////////////////////////////
 
 // 16-bit packed RGB color.
-union Color16 {
-  // TODO(commongear): c++ doesn't specify the memory layout of struct
-  // bitfields, so this could break on different platforms. Switch to Unpack.
-  struct {
-    uint16_t r : 5;
-    uint16_t g : 5;
-    uint16_t b : 5;
-    // TODO(commongear): This doesn't appear to be alpha. Is it padding?
-    // Extremely few palette colors have this set, and it doesn't seem related
-    // to their intended transparency.
-    uint16_t a : 1;
-  };
+struct Color16 {
   uint16_t data;
-};
+
+  // 5-bit colors.
+  uint8_t r5() const { return Unpack<uint8_t, /*bits=*/5, /*shift=*/0>(data); }
+  uint8_t g5() const { return Unpack<uint8_t, /*bits=*/5, /*shift=*/5>(data); }
+  uint8_t b5() const { return Unpack<uint8_t, /*bits=*/5, /*shift=*/10>(data); }
+
+  // 8-bit colors.
+  uint8_t r() const { return r5() << 3; }
+  uint8_t g() const { return g5() << 3; }
+  uint8_t b() const { return b5() << 3; }
+
+  // Opacity (for black, the padding bit is set to force opaque rendering).
+  bool opaque() const { return data != 0; }
+  uint8_t force_opaque() const {
+    return Unpack<uint8_t, /*bits=*/1, /*shift=*/15>(data);
+  }
+} __attribute__((packed));
+static_assert(sizeof(Color16) == 2);
 
 std::ostream& operator<<(std::ostream& os, Color16 c) {
-  return os << "{rgb " << (c.r << 3) << " " << (c.g << 3) << " " << (c.b << 3)
-            << " " << c.a << "}";
+  return os << "{rgb " << static_cast<int>(c.r()) << " "
+            << static_cast<int>(c.g()) << " " << static_cast<int>(c.b()) << " "
+            << static_cast<int>(c.force_opaque()) << "}";
 }
 
 // 32-bit packed fixed-point normal.
@@ -536,9 +543,9 @@ struct CarPix {
     Image out(dim, dim, 3);
     out.pixels.clear();
     for (const Color16 c : palettes[p].data) {
-      out.pixels.push_back(c.r << 3);
-      out.pixels.push_back(c.g << 3);
-      out.pixels.push_back(c.b << 3);
+      out.pixels.push_back(c.r());
+      out.pixels.push_back(c.g());
+      out.pixels.push_back(c.b());
     }
     out.pixels.resize(dim * dim * 3);
     return out;
@@ -557,12 +564,10 @@ struct CarPix {
         const uint8_t lo = pixel & 0xF;
         const uint8_t hi = PaletteToHighBits(pal);
         const Color16 c = palettes[p].data[lo | hi];
-        texture.pixels.push_back(c.r << 3);
-        texture.pixels.push_back(c.g << 3);
-        texture.pixels.push_back(c.b << 3);
-        // NOTE(commongear): zero appears to be rendered as transparent. Is this
-        // always supposed to be true?
-        texture.pixels.push_back(c.data ? 255 : 0);
+        texture.pixels.push_back(c.r());
+        texture.pixels.push_back(c.g());
+        texture.pixels.push_back(c.b());
+        texture.pixels.push_back(c.opaque() ? 255 : 0);
         ++i;
       }
       {
@@ -570,10 +575,10 @@ struct CarPix {
         const uint8_t lo = (pixel >> 4);
         const uint8_t hi = PaletteToHighBits(pal);
         const Color16 c = palettes[p].data[lo | hi];
-        texture.pixels.push_back(c.r << 3);
-        texture.pixels.push_back(c.g << 3);
-        texture.pixels.push_back(c.b << 3);
-        texture.pixels.push_back(c.data ? 255 : 0);
+        texture.pixels.push_back(c.r());
+        texture.pixels.push_back(c.g());
+        texture.pixels.push_back(c.b());
+        texture.pixels.push_back(c.opaque() ? 255 : 0);
         ++i;
       }
     }

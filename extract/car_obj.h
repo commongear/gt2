@@ -80,7 +80,7 @@ inline void TransferNormals(std::vector<TexFace>& faces) {
   need_normals.reserve(faces.size() / 4);
 
   // Pick out faces that don't have normals, keyed by vertex-indices.
-  for (auto & f : faces) {
+  for (auto& f : faces) {
     if (!f.has_normals()) need_normals[f.i_vert_data] = &f;
   }
 
@@ -172,8 +172,10 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m,
 // Writes the car object and pix files to an OBJ.
 inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
                     const std::string& path, const std::string& name) {
-  CHECK(EndsWith(name, "cd"),
-        "Output name should end with 'cd' to avoid name collisions.");
+  CHECK(EndsWith(name, ".cd") || EndsWith(name, ".cn"),
+        "Output name should end with '.cd' or '.cn' to avoid name collisions "
+        "between models.",
+        name);
 
   const Image pixels = cdp.Pixels();
   const CarObject::UvPalette uv_palette = cdo.DrawUvPalette();
@@ -228,7 +230,8 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
   wheels.reserve(4);
   for (int i = 0; i < 4; ++i) {
     wheels.push_back({});
-    MakeWheel(cdo.header.wheels[i], cdo.header.wheel_size[i / 2], wheels.back());
+    MakeWheel(cdo.header.wheels[i], cdo.header.wheel_size[i / 2],
+              wheels.back());
   }
 
   // Write an OBJ file for each LOD.

@@ -106,10 +106,10 @@ void InspectFiles(FileInStream& s, const Vol& vol, const std::string& pattern) {
 
       // Print information about 
       if (EndsWith(full_name, ".cdo") || EndsWith(full_name, ".cno")) {
-        ObjectFile c = ObjectFile::FromStream(file);
+        const CarObject c = CarObject::FromStream(file);
         std::cout << c << std::endl;
       } else if (EndsWith(full_name, ".cdp") || EndsWith(full_name, ".cdo")) {
-        Picture c = Picture::FromStream(file);
+        const CarPix c = CarPix::FromStream(file);
         std::cout << c << std::endl;
       } else {
         std::cout << "We don't know much about this file yet..." << std::endl;

@@ -15,11 +15,72 @@
 
 namespace gt2 {
 
-constexpr float kPif = 3.14159265;
+////////////////////////////////////////////////////////////////////////////////
+// Summary
+////////////////////////////////////////////////////////////////////////////////
+//
+//  This code does a pretty thorough job of loading both cdo/cno and cdp/cnp
+//  files correctly. The most interesting contribution (I haven't seen it
+//  before) is the mapping-out of the Face and TexFace data. They have lots of
+//  rendering flags related to tail lights, decals, reflections, rendering
+//  order, etc. Understanding the normals and normal indices was a particularly
+//  hairy endeavor, as they're stored little-endian and bit-packed into lots of
+//  wacky, mis-aligned places.
+//
 
 ////////////////////////////////////////////////////////////////////////////////
-// CDO/CNO (3D OBJECT DATA FILES).
+// Data types.
 ////////////////////////////////////////////////////////////////////////////////
+
+// 16-bit packed RGB color.
+union Color16 {
+  // TODO(commongear): c++ doesn't specify the memory layout of struct
+  // bitfields, so this could break on different platforms. Switch to Unpack.
+  struct {
+    uint16_t r : 5;
+    uint16_t g : 5;
+    uint16_t b : 5;
+    // TODO(commongear): This doesn't appear to be alpha. Is it padding?
+    // Extremely few palette colors have this set, and it doesn't seem related
+    // to their intended transparency.
+    uint16_t a : 1;
+  };
+  uint16_t data;
+};
+
+std::ostream& operator<<(std::ostream& os, Color16 c) {
+  return os << "{rgb " << (c.r << 3) << " " << (c.g << 3) << " " << (c.b << 3)
+            << " " << c.a << "}";
+}
+
+// 32-bit packed fixed-point normal.
+// Multiply each element by 1/500 to get a vector with unit length.
+struct Normal32 {
+  // NOTE: data is stored litte-endian.
+  // As a uint32_t, it looks like this:
+  //  MSB [10 z][10 y][10 x][2 pad] LSB.
+  // On disk, it would look like this:
+  //  LSB [2 pad][10 x][10 y][10 z] MSB.
+  uint32_t data;
+  int16_t x() const { return Unpack<int16_t, /*bits=*/10, /*shfit=*/2>(data); }
+  int16_t y() const { return Unpack<int16_t, /*bits=*/10, /*shfit=*/12>(data); }
+  int16_t z() const { return Unpack<int16_t, /*bits=*/10, /*shfit=*/22>(data); }
+
+  // The length should be 1.0.
+  bool Validate() const {
+    constexpr float k = 1.0f / 500.0f;
+    const float x = k * this->x();
+    const float y = k * this->y();
+    const float z = k * this->z();
+    const float l = std::sqrt(x * x + y * y + z * z);
+    return (0.995 <= l && l <= 1.0);
+  }
+} __attribute__((packed));
+static_assert(sizeof(Normal32) == 4);
+
+std::ostream& operator<<(std::ostream& os, const Normal32& n) {
+  return os << "{" << n.x() << " " << n.y() << " " << n.z() << "}";
+}
 
 // One solid color face (tri or quad).
 struct Face {
@@ -66,14 +127,18 @@ struct Face {
   //          rendered, inside faces of spoilers, all untextured stuff. This is
   //          probably everything that doesn't receive a reflection. They don't
   //          have normals.
-  uint8_t flags_b() const { return Unpack<uint8_t, 4, 12>(data_b); }
+  uint8_t flags_b() const {
+    return Unpack<uint8_t, /*bits=*/4, /*shift=*/12>(data_b);
+  }
 
   // Flags D (Face type?):
   //    --100---: triangle
   //    --101---: quad
   //    -----000: untextured
   //    -----101: textured
-  uint8_t flags_d() const { return Unpack<uint8_t, 8, 24>(data_d); }
+  uint8_t flags_d() const {
+    return Unpack<uint8_t, /*bits=*/8, /*shift=*/24>(data_d);
+  }
 
   // Tail light palette index must be incremented when brakes are applied.
   bool is_tail_light() const { return (flags_b() >> 2) & 0x1; }
@@ -81,7 +146,7 @@ struct Face {
   // Not all faces have normals.
   bool has_normals() const { return flags_b() >> 3; }
 
-  // NOTE: experimental. Not all face may be correctly marked as quads or tris.
+  // NOTE: experimental. Not all faces may be correctly marked as quads or tris.
   bool is_tri() const { return (flags_d() >> 3) == 0x4; }
   bool is_quad() const { return (flags_d() >> 3) == 0x5; }
 
@@ -94,19 +159,19 @@ struct Face {
   uint16_t i_normal(int n) const {
     switch (n) {
       case 0:
-        return Unpack<uint16_t, 9, 5>(data_a);
+        return Unpack<uint16_t, /*bits=*/9, /*shift=*/5>(data_a);
       case 1:
-        return Unpack<uint16_t, 9, 1>(data_c);
+        return Unpack<uint16_t, /*bits=*/9, /*shift=*/1>(data_c);
       case 2:
-        return Unpack<uint16_t, 9, 10>(data_c);
+        return Unpack<uint16_t, /*bits=*/9, /*shift=*/10>(data_c);
       case 3:
-        return Unpack<uint16_t, 9, 19>(data_c);
+        return Unpack<uint16_t, /*bits=*/9, /*shift=*/19>(data_c);
     }
     return 0;
   }
 
-  // Experimental: copies normals from the given face.
-  void CopyNormalsFrom(const Face& f) {
+  // Experimental: copies normal indices from the given face.
+  void CopyNormalIndicesFrom(const Face& f) {
     // TODO(commongear): we copy some other bits too, but they're usually zero.
     // May need to revisit with better masking.
     constexpr uint16_t flags_a_mask = LowBits<5, uint16_t>();
@@ -159,39 +224,6 @@ std::ostream& operator<<(std::ostream& os, const TexFace& f) {
             << StrCat(f.uv0, f.uv1, f.uv2, f.uv3) << "]}";
 }
 
-// Header for a cdo/cno.
-struct ObjectHeader {
-  // Wheel dimensions *may* need to be divided by 2 to match car scale.
-  struct WheelSize {
-    uint16_t radius;
-    uint16_t width;
-  };
-  char magic[4];
-  uint8_t padding[20];  // Should be zero.
-  // 0: front wheels. 1: rear wheels.
-  WheelSize wheel_size[2];
-  // These are wheel positions. They need to be divided by 2 to match car scale.
-  // (x, y, z) are obvious. (w) is still a mystery.
-  Vec4<int16_t> wheels[4];
-
-  bool Validate() {
-    return std::strncmp(magic, "GT\2\0", 4) == 0 && IsZero(padding);
-  }
-} __attribute__((packed));
-static_assert(sizeof(ObjectHeader) == 64, "");
-
-std::ostream& operator<<(std::ostream& os, const ObjectHeader::WheelSize& s) {
-  return os << "{rad:" << s.radius << " width:" << s.width << "}";
-}
-
-std::ostream& operator<<(std::ostream& os, const ObjectHeader& h) {
-  os << "magic: " << std::string_view(h.magic, 4)
-     << "\nfront_wheel: " << h.wheel_size[0]
-     << "\nrear_wheel: " << h.wheel_size[1] << "\nwheel_pos: [\n"
-     << ToString<kSplitLines>(h.wheels) << "\n]\n";
-  return os;
-}
-
 // One level-of-detail (LOD) from a cno/cdo.
 struct Model {
   struct Header {
@@ -211,34 +243,9 @@ struct Model {
   } __attribute__((packed));
   static_assert(sizeof(Model::Header) == 80);
 
-  // This is a fixed-point normal vector.
-  // Multiply each element by 1/500 to normalize.
-  struct Normal {
-    // NOTE: data is stored litte-endian.
-    // As a uint32_t, it looks like this:
-    //  MSB [10 z][10 y][10 x][2 pad] LSB.
-    // On disk, it would look like this:
-    //  LSB [2 pad][10 x][10 y][10 z] MSB.
-    uint32_t data;
-    int16_t x() const { return Unpack<int16_t, 10, 2>(data); }
-    int16_t y() const { return Unpack<int16_t, 10, 12>(data); }
-    int16_t z() const { return Unpack<int16_t, 10, 22>(data); }
-
-    // The length should be 1.0.
-    bool Validate() const {
-      constexpr float k = 1.0f / 500.0f;
-      const float x = k * this->x();
-      const float y = k * this->y();
-      const float z = k * this->z();
-      const float l = std::sqrt(x * x + y * y + z * z);
-      return (0.995 <= l && l <= 1.0);
-    }
-  } __attribute__((packed));
-  static_assert(sizeof(Model::Normal) == 4);
-
   Model::Header header;
   std::vector<Vec4<int16_t>> verts;
-  std::vector<Normal> normals;
+  std::vector<Normal32> normals;
   std::vector<Face> tris;
   std::vector<Face> quads;
   std::vector<TexFace> tex_tris;
@@ -249,9 +256,9 @@ struct Model {
     Model out;
     out.header = s.template Read<Model::Header>();
     out.verts = s.template Read<Vec4<int16_t>>(out.header.num_verts);
-    out.normals = s.template Read<Normal>(out.header.num_normals);
+    out.normals = s.template Read<Normal32>(out.header.num_normals);
     for (int i = 0; i < out.header.num_normals; ++i) {
-      const Normal& n = out.normals[i];
+      const Normal32& n = out.normals[i];
       CHECK(n.Validate(), "Bad normal. i=", i, n);
     }
     out.tris = s.template Read<Face>(out.header.num_tris);
@@ -296,10 +303,6 @@ std::ostream& operator<<(std::ostream& os, const Model::Header& h) {
             << "\ntex_quads: " << h.num_tex_quads;
 }
 
-std::ostream& operator<<(std::ostream& os, const Model::Normal& n) {
-  return os << "{" << n.x() << " " << n.y() << " " << n.z() << "}";
-}
-
 std::ostream& operator<<(std::ostream& os, const Model& m) {
   os << m.header << std::endl;
   os << ToString<kSplitLines>(m.verts) << std::endl;
@@ -311,157 +314,59 @@ std::ostream& operator<<(std::ostream& os, const Model& m) {
   return os;
 }
 
-// Builds a rudimentary wheel and stores it in 'm'.
-void MakeWheel(Vec4<int16_t> pos, ObjectHeader::WheelSize size, Model& m) {
-  const float r_tire = size.radius;
-  const float r_rim = 0.75 * r_tire;
-  const float width = size.width * (pos.w < 0 ? 1 : -1);
-  const int n = 16;
-  const float dth = 2.f * kPif / n * (pos.w < 0 ? 1 : -1);
-  // Center of the inside.
-  m.verts.emplace_back(pos.x + width, pos.y, pos.z, 0);
-  // Center of the outside.
-  m.verts.emplace_back(pos.x + 0.07f * width, pos.y, pos.z, 0);
-  const int vert = m.verts.size();
-  // Wheel rim.
-  for (int i = 0; i < n; ++i) {
-    const float th = i * dth;
-    const float x = pos.x + 0.5 + 0.07f * width;
-    const float y = pos.y + r_rim * std::sin(th) + 0.5;
-    const float z = pos.z + r_rim * std::cos(th) + 0.5;
-    m.verts.emplace_back(x, y, z, 0);
-  }
-  // Tire rim.
-  for (int i = 0; i < n; ++i) {
-    const float th = i * dth;
-    const float x = pos.x + 0.5;
-    const float y = pos.y + r_rim * std::sin(th) + 0.5;
-    const float z = pos.z + r_rim * std::cos(th) + 0.5;
-    m.verts.emplace_back(x, y, z, 0);
-  }
-  // Tire outer.
-  for (int i = 0; i < n; ++i) {
-    const float th = i * dth;
-    const float x = pos.x + 0.5;
-    const float y = pos.y + r_tire * std::sin(th) + 0.5;
-    const float z = pos.z + r_tire * std::cos(th) + 0.5;
-    m.verts.emplace_back(x, y, z, 0);
-  }
-  // Tire inner.
-  for (int i = 0; i < n; ++i) {
-    const float th = i * dth;
-    const float x = pos.x + 0.5 + width;
-    const float y = pos.y + r_tire * std::sin(th) + 0.5;
-    const float z = pos.z + r_tire * std::cos(th) + 0.5;
-    m.verts.emplace_back(x, y, z, 0);
-  }
-  // Wheel.
-  for (int i = 0; i < n; ++i) {
-    m.tex_tris.push_back({});
-    TexFace& f = m.tex_tris.back();
-    f.set_textured();
-    f.i_vert[0] = vert - 1;
-    f.i_vert[1] = vert + i;
-    f.i_vert[2] = vert + (i + 1) % n;
-
-    const float th = i * dth;
-    const float thp = (i + 1) * dth;
-    const float kR = 23.f;
-    f.uv0.x = 0.5f + kR;
-    f.uv0.y = 0.5f + kR;
-    f.uv1.x = 0.5f + kR + kR * std::cos(th);
-    f.uv1.y = 0.5f + kR + kR * std::sin(th);
-    f.uv2.x = 0.5f + kR + kR * std::cos(thp);
-    f.uv2.y = 0.5f + kR + kR * std::sin(thp);
-  }
-  // Rim lip.
-  for (int i = 0; i < n; ++i) {
-    m.tex_quads.push_back({});
-    TexFace& f = m.tex_quads.back();
-    f.set_textured();
-    f.set_quad();
-    f.i_vert[0] = vert + i + n;
-    f.i_vert[1] = vert + (i + 1) % n + n;
-    f.i_vert[2] = vert + (i + 1) % n;
-    f.i_vert[3] = vert + i;
-
-    const float th = i * dth;
-    const float thp = (i + 1) * dth;
-    const float kR = 23.f;
-    f.uv0.x = 0.5f + kR + kR * std::cos(th);
-    f.uv0.y = 0.5f + kR + kR * std::sin(th);
-    f.uv1.x = 0.5f + kR + kR * std::cos(thp);
-    f.uv1.y = 0.5f + kR + kR * std::sin(thp);
-    f.uv2 = f.uv1;
-    f.uv3 = f.uv0;
-  }
-  // Tire wall.
-  for (int i = 0; i < n; ++i) {
-    m.quads.push_back({});
-    Face& f = m.quads.back();
-    f.set_quad();
-    f.i_vert[0] = vert + i + 2 * n;
-    f.i_vert[1] = vert + (i + 1) % n + 2 * n;
-    f.i_vert[2] = vert + (i + 1) % n + n;
-    f.i_vert[3] = vert + i + n;
-  }
-  // Tire tread.
-  for (int i = 0; i < n; ++i) {
-    m.quads.push_back({});
-    Face& f = m.quads.back();
-    f.set_quad();
-    f.i_vert[0] = vert + 2 * n + i + n;
-    f.i_vert[1] = vert + 2 * n + (i + 1) % n + n;
-    f.i_vert[2] = vert + 2 * n + (i + 1) % n;
-    f.i_vert[3] = vert + 2 * n + i;
-  }
-  // Wheel/tire inside.
-  for (int i = 0; i < n; ++i) {
-    m.tris.push_back({});
-    Face& f = m.tris.back();
-    f.i_vert[0] = vert - 2;
-    f.i_vert[1] = vert + 3 * n + (i + 1) % n;
-    f.i_vert[2] = vert + 3 * n + i;
-  }
-}
-
-struct ObjectFooter {
-  Vec4<int16_t> unknown;
-  // Appears to be the collision bounds at road-level?
-  Vec4<int16_t> lower_bound;
-  Vec4<int16_t> upper_bound;
-};
-
-std::ostream& operator<<(std::ostream& os, const ObjectFooter& f) {
-  return os << "{unknown:" << f.unknown << " lo:" << f.lower_bound
-            << " hi:" << f.upper_bound << "}";
-}
+////////////////////////////////////////////////////////////////////////////////
+// CDO/CNO (Car 3d model data files).
+////////////////////////////////////////////////////////////////////////////////
 
 // Stored in a 'cdo' (daytime tracks) or 'cno' (nighttime tracks).
-struct ObjectFile {
+struct CarObject {
+  struct Header {
+    // Wheel dimensions *may* need to be divided by 2 to match car scale.
+    struct WheelSize {
+      uint16_t radius;
+      uint16_t width;
+    };
+    char magic[4];
+    uint8_t padding[20];  // Should be zero.
+    // 0: front wheels. 1: rear wheels.
+    WheelSize wheel_size[2];
+    // These are wheel positions. They need to be divided by 2 to match car
+    // scale. (x, y, z) are obvious. (w) is still a mystery.
+    Vec4<int16_t> wheels[4];
+
+    bool Validate() {
+      return std::strncmp(magic, "GT\2\0", 4) == 0 && IsZero(padding);
+    }
+  } __attribute__((packed));
+  static_assert(sizeof(Header) == 64);
+
+  struct Footer {
+    Vec4<int16_t> unknown;
+    // Appears to be the collision bounds at road-level?
+    Vec4<int16_t> lower_bound;
+    Vec4<int16_t> upper_bound;
+  };
+  static_assert(sizeof(Footer) == 24);
+
   // As-read from the file.
-  ObjectHeader header;
+  Header header;
   std::vector<uint16_t> padding;  // All zeros?
   uint16_t num_lods;
   std::vector<uint16_t> unknown1;  // Lots of stuff in here.
   std::vector<Model> lods;
-  ObjectFooter footer;
+  Footer footer;
   uint16_t unknown2;              // Looks to be some kind of flags (+scale?).
   std::vector<uint8_t> unknown3;  // Looks to be 4-byte chunks.
   std::vector<int16_t> unknown4;  // Interesting symmetry in here...
-
-  // Derived.
-  // TODO(commongear): this is not necessary here.
-  std::vector<Model> wheels;
 
   // Multiply each vertex by this value to scale the body correctly relative to
   // the wheels. Are there more than just two scales?
   float body_scale() const { return (unknown2 & 0x1) ? 2.0f : 1.0f; }
 
   template <typename Stream>
-  static ObjectFile FromStream(Stream& s) {
-    ObjectFile out;
-    out.header = s.template Read<ObjectHeader>();
+  static CarObject FromStream(Stream& s) {
+    CarObject out;
+    out.header = s.template Read<Header>();
     CHECK(out.header.Validate());
     out.padding = s.template Read<uint16_t>(0x828 / 2);
     CHECK(IsZero(out.padding));
@@ -472,18 +377,10 @@ struct ObjectFile {
       out.lods.push_back(Model::FromStream(s));
     }
 
-    out.footer = s.template Read<ObjectFooter>();
+    out.footer = s.template Read<Footer>();
     out.unknown2 = s.template Read<uint16_t>();
     out.unknown3 = s.template Read<uint8_t>(16);
     out.unknown4 = s.template Read<int16_t>(s.remain() / sizeof(int16_t));
-
-    // Let's make some wheels!
-    // TODO(commongear): this is not necessary here...
-    for (int i = 0; i < 4; ++i) {
-      out.wheels.push_back({});
-      Model& w = out.wheels.back();
-      MakeWheel(out.header.wheels[i], out.header.wheel_size[i / 2], w);
-    }
 
     return out;
   }
@@ -520,7 +417,25 @@ struct ObjectFile {
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const ObjectFile& f) {
+std::ostream& operator<<(std::ostream& os,
+                         const CarObject::Header::WheelSize& s) {
+  return os << "{rad:" << s.radius << " width:" << s.width << "}";
+}
+
+std::ostream& operator<<(std::ostream& os, const CarObject::Header& h) {
+  os << "magic: " << std::string_view(h.magic, 4)
+     << "\nfront_wheel: " << h.wheel_size[0]
+     << "\nrear_wheel: " << h.wheel_size[1] << "\nwheel_pos: [\n"
+     << ToString<kSplitLines>(h.wheels) << "\n]\n";
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const CarObject::Footer& f) {
+  return os << "{unknown:" << f.unknown << " lo:" << f.lower_bound
+            << " hi:" << f.upper_bound << "}";
+}
+
+std::ostream& operator<<(std::ostream& os, const CarObject& f) {
   os << f.header << "\n"
      << "unknown1:" << ToString(f.unknown1) << "\nnum_lods: " << f.num_lods
      << "\n";
@@ -535,31 +450,11 @@ std::ostream& operator<<(std::ostream& os, const ObjectFile& f) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// CDP/CNP (PICTURE DATA FILES).
+// CDP/CNP (Car picture? (what the heck does the 'p' stand for?) data files).
 ////////////////////////////////////////////////////////////////////////////////
 
-union Color16 {
-  // TODO(commongear): c++ doesn't specify the memory layout of struct
-  // bitfields, so this could break on different platforms. Switch to Unpack.
-  struct {
-    uint16_t r : 5;
-    uint16_t g : 5;
-    uint16_t b : 5;
-    // TODO(commongear): This doesn't appear to be alpha. Is it padding?
-    // Extremely few palette colors have this set, and it doesn't seem related
-    // to their intended transparency.
-    uint16_t a : 1;
-  };
-  uint16_t data;
-};
-
-std::ostream& operator<<(std::ostream& os, Color16 c) {
-  return os << "{rgb " << (c.r << 3) << " " << (c.g << 3) << " " << (c.b << 3)
-            << " " << c.a << "}";
-}
-
 // Stored in a 'cdp' (daytime tracks) or 'cnp' (nighttime tracks).
-struct Picture {
+struct CarPix {
   struct Palette {
     Color16 data[256];
     uint8_t unknown[64];
@@ -588,8 +483,8 @@ struct Picture {
   static uint8_t PaletteToHighBits(uint8_t i) { return (i | (i << 4)) & 0xF0; }
 
   template <typename Stream>
-  static Picture FromStream(Stream& s) {
-    Picture out;
+  static CarPix FromStream(Stream& s) {
+    CarPix out;
     // TODO(commongear): read the actual correct size.
     // TODO(commongear): UVs aren't generated correctly for non-square images.
     out.width = 256;
@@ -651,7 +546,7 @@ struct Picture {
     return out;
   }
 
-  // Unpacks the 32-bit RGBA texture stored in this picture using palette 'p'.
+  // Unpacks the 32-bit RGBA texture stored in this CarPix using palette 'p'.
   // The 'palette_index' must be the 8-bit value from each face of the 3d model,
   // written into a UV-space image.
   Image Texture(int p, const Image& palette_index) const {
@@ -694,13 +589,13 @@ struct Picture {
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const Picture::Palette& p) {
+std::ostream& operator<<(std::ostream& os, const CarPix::Palette& p) {
   return os << "data:\n"
             << ToString<kSplitLines>(p.data)
             << "\nunknown: " << ToString(p.unknown) << "\n";
 }
 
-std::ostream& operator<<(std::ostream& os, const Picture& p) {
+std::ostream& operator<<(std::ostream& os, const CarPix& p) {
   os << "num_palettes: " << static_cast<int>(p.num_palettes)
      << "\nunknown1: " << ToString(p.unknown1);
   if (!p.unknown4.empty()) os << "\nunknown4: " << ToString(p.unknown4);

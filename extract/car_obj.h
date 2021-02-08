@@ -246,6 +246,8 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
     WriteObj(f, state, cdo.lods[i], cdo.body_scale());
     for (const auto& w : wheels) WriteObj(f, state, w);
   }
+
+  // TODO(commongear): write the shadow to the OBJ.
 }
 
 }  // namespace gt2

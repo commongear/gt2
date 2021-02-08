@@ -89,7 +89,7 @@ struct Image {
     for (int y = 0; y < height; ++y) {
       const Bounds& b = to_draw[y];
       const int hi = std::min(width, b.hi);
-      for (int x = b.lo; x < hi; ++x) at(x, y) = value;
+      for (int x = b.lo; x <= hi; ++x) at(x, y) = value;
     }
   }
 

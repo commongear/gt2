@@ -466,9 +466,8 @@ struct CarObject {
         x0 += 256;
       }
     }
-    // Our drawing algos leave gaps. Grow the index and mask regions.
+    // Grow the index and mask regions to cover any jagged, ambiguous edges.
     out.index.GrowBorders(out.mask);
-    // out.index.GrowBorders(out.mask);
     return out;
   }
 };

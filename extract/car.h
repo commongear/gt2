@@ -240,13 +240,13 @@ struct Model {
     uint16_t num_tris = 0;
     uint16_t num_quads = 0;
     // These appear to be padding (always zero?)
-    uint16_t unknown_1 = 0;
-    uint16_t unknown_2 = 0;
+    uint16_t unknown1 = 0;
+    uint16_t unknown2 = 0;
     // Textured faces.
     uint16_t num_tex_tris = 0;
     uint16_t num_tex_quads = 0;
-    // Should be zero.
-    uint16_t padding[32];
+    // Not always zero!
+    uint16_t unknown3[32];  // Some mystery data in here...
   } __attribute__((packed));
   static_assert(sizeof(Model::Header) == 80);
 
@@ -303,11 +303,12 @@ struct Model {
 };
 
 std::ostream& operator<<(std::ostream& os, const Model::Header& h) {
-  return os << "verts: " << h.num_verts << "\nnum_norms: " << h.num_normals
-            << "\ntris: " << h.num_tris << "\nquads: " << h.num_quads
-            << "\n?? 1: " << h.unknown_1 << "\n?? 2: " << h.unknown_2
-            << "\ntex_tris: " << h.num_tex_tris
-            << "\ntex_quads: " << h.num_tex_quads;
+  return os << "{ Model\n verts: " << h.num_verts
+            << "\n norms: " << h.num_normals << "\n tris: " << h.num_tris
+            << "\n quads: " << h.num_quads << "\n ?? 1: " << h.unknown1
+            << "\n ?? 2: " << h.unknown2 << "\n tex_tris: " << h.num_tex_tris
+            << "\n tex_quads: " << h.num_tex_quads
+            << "\n unknown3: " << ToString(h.unknown3) << "\n}";
 }
 
 std::ostream& operator<<(std::ostream& os, const Model& m) {
@@ -345,13 +346,67 @@ struct CarObject {
   } __attribute__((packed));
   static_assert(sizeof(Header) == 64);
 
-  struct Footer {
-    Vec4<int16_t> unknown;
-    // Appears to be the collision bounds at road-level?
-    Vec4<int16_t> lower_bound;
-    Vec4<int16_t> upper_bound;
+  // The shadow model of the car.
+  // It also has scale information for interpreting the rest of the car verts.
+  struct Shadow {
+    struct Header {
+      uint16_t num_verts;
+      uint16_t num_tris;
+      uint16_t num_quads;
+      uint16_t unknown1;
+
+      // This looks like collision bounds for the whole car at road level.
+      Vec4<int16_t> lo_bound;
+      Vec4<int16_t> hi_bound;
+
+      // Scale for the whole car model (except wheels).
+      // Values appear comparable, so maybe they all have to do with scale?
+      uint8_t scale;
+      uint8_t unknown2;
+      uint8_t unknown3;
+      uint8_t unknown4;
+    };
+    static_assert(sizeof(Header) == 28);
+
+    struct Face {
+      uint32_t data;
+
+      // 0x80 seems to indicate 'gradient', otherwise zero.
+      uint8_t flags() const { return Unpack<uint32_t, /*bits=*/8, 24>(data); }
+
+      // Vertex indices.
+      uint8_t i_vert(int n) const {
+        switch (n) {
+          case 0:
+            return Unpack<uint32_t, /*bits=*/6, /*shift=*/0>(data);
+          case 1:
+            return Unpack<uint32_t, /*bits=*/6, /*shift=*/6>(data);
+          case 2:
+            return Unpack<uint32_t, /*bits=*/6, /*shift=*/12>(data);
+          case 3:
+            return Unpack<uint32_t, /*bits=*/6, /*shift=*/18>(data);
+        }
+        return 0;
+      }
+    };
+    static_assert(sizeof(Face) == 4);
+
+    // Shadow data, as read from the file.
+    Header header;
+    std::vector<Vec2<int16_t>> verts;  // x,z only.
+    std::vector<Face> tris;
+    std::vector<Face> quads;
+
+    template <typename Stream>
+    static Shadow FromStream(Stream& s) {
+      Shadow out;
+      out.header = s.template Read<Header>();
+      out.verts = s.template Read<Vec2<int16_t>>(out.header.num_verts);
+      out.tris = s.template Read<Face>(out.header.num_tris);
+      out.quads = s.template Read<Face>(out.header.num_quads);
+      return out;
+    }
   };
-  static_assert(sizeof(Footer) == 24);
 
   // As-read from the file.
   Header header;
@@ -359,14 +414,12 @@ struct CarObject {
   uint16_t num_lods;
   std::vector<uint16_t> unknown1;  // Lots of stuff in here.
   std::vector<Model> lods;
-  Footer footer;
-  uint16_t unknown2;              // Looks to be some kind of flags (+scale?).
-  std::vector<uint8_t> unknown3;  // Looks to be 4-byte chunks.
-  std::vector<int16_t> unknown4;  // Interesting symmetry in here...
+  Shadow shadow;
 
   // Multiply each vertex by this value to scale the body correctly relative to
   // the wheels. Are there more than just two scales?
-  float body_scale() const { return (unknown2 & 0x1) ? 2.0f : 1.0f; }
+  // TODO(commongear): I broke this when implementing the footer.
+  float body_scale() const { return (shadow.header.scale & 0x1) ? 2.0f : 1.0f; }
 
   template <typename Stream>
   static CarObject FromStream(Stream& s) {
@@ -382,11 +435,9 @@ struct CarObject {
       out.lods.push_back(Model::FromStream(s));
     }
 
-    out.footer = s.template Read<Footer>();
-    out.unknown2 = s.template Read<uint16_t>();
-    out.unknown3 = s.template Read<uint8_t>(16);
-    out.unknown4 = s.template Read<int16_t>(s.remain() / sizeof(int16_t));
+    out.shadow = Shadow::FromStream(s);
 
+    CHECK_EQ(s.remain(), 0);
     return out;
   }
 
@@ -428,30 +479,31 @@ std::ostream& operator<<(std::ostream& os,
 }
 
 std::ostream& operator<<(std::ostream& os, const CarObject::Header& h) {
-  os << "magic: " << std::string_view(h.magic, 4)
-     << "\nfront_wheel: " << h.wheel_size[0]
-     << "\nrear_wheel: " << h.wheel_size[1] << "\nwheel_pos: [\n"
-     << ToString<kSplitLines>(h.wheel_pos) << "\n]\n";
+  os << "{ CarObject\n magic: " << std::string_view(h.magic, 4)
+     << "\n front_wheel_size: " << h.wheel_size[0]
+     << "\n rear_wheel_size: " << h.wheel_size[1] << "\n wheel_pos: [\n"
+     << ToString<kSplitLines>(h.wheel_pos) << "\n ]\n}";
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const CarObject::Footer& f) {
-  return os << "{unknown:" << f.unknown << " lo:" << f.lower_bound
-            << " hi:" << f.upper_bound << "}";
+std::ostream& operator<<(std::ostream& os, const CarObject::Shadow::Header& h) {
+  return os << "{ CarObject::Shadow\n nverts: " << h.num_verts
+            << "\n ntris: " << h.num_tris << "\n nquads: " << h.num_quads
+            << "\n unknown1: " << h.unknown1 << "\n car_lo: " << h.lo_bound
+            << "\n car_hi: " << h.hi_bound
+            << "\n scale: " << static_cast<int>(h.scale)
+            << "\n unknown2: " << static_cast<int>(h.unknown2)
+            << "\n unknown3: " << static_cast<int>(h.unknown3)
+            << "\n unknown4: " << static_cast<int>(h.unknown4) << "\n}";
 }
 
 std::ostream& operator<<(std::ostream& os, const CarObject& f) {
-  os << f.header << "\n"
-     << "unknown1:" << ToString(f.unknown1) << "\nnum_lods: " << f.num_lods
-     << "\n";
+  os << f.header << "\nunknown1: " << ToString(f.unknown1)
+     << "\nnum_lods: " << f.num_lods << "\n";
   for (const auto& m : f.lods) {
-    os << m.header << "\n-----------------------\n";
+    os << m.header << "\n";
   }
-  os << f.footer;
-  os << "\nunknown2: " << f.unknown2;
-  os << "\nunknown3: " << ToString(f.unknown3);
-  os << "\nunknown4: " << ToString(f.unknown4);
-  return os << "\n";
+  return os << f.shadow.header << std::endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

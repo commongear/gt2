@@ -323,6 +323,8 @@ class World {
   }
 
   loadCar(name) {
+    console.log('loading', name);
+
     const setCarTexParams = tex => {
       tex.encoding = THREE.sRGBEncoding;
       tex.magFilter = THREE.NearestFilter;

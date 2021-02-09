@@ -76,6 +76,15 @@ struct Color16 {
   uint8_t force_opaque() const {
     return Unpack<uint8_t, /*bits=*/1, /*shift=*/15>(data);
   }
+
+  // Writes the color as a standard RGB hex string.
+  void WriteHex(std::ostream& os) const {
+    using std::setfill;
+    using std::setw;
+    os << setw(2) << setfill('0') << std::hex << static_cast<int>(r())
+       << setw(2) << setfill('0') << std::hex << static_cast<int>(g())
+       << setw(2) << setfill('0') << std::hex << static_cast<int>(b());
+  }
 } __attribute__((packed));
 static_assert(sizeof(Color16) == 2);
 
@@ -234,11 +243,17 @@ std::ostream& operator<<(std::ostream& os, const Face& f) {
 // One textured face (tri or quad).
 struct TexFace : Face {
   Vec2<uint8_t> uv0;
-  uint16_t palette_index;  // UNKNOWN: why is the format so wacky?
+  uint16_t pal_data;
   Vec2<uint8_t> uv1;
   uint16_t unknown3;  // UNKNOWN
   Vec2<uint8_t> uv2;
   Vec2<uint8_t> uv3;
+
+  // Palette index is stored in a very odd format: [2 MSB, 4 zero, 2 LSB].
+  //  - It picks a 16 color chunk of the palette in the CDP.
+  //  - The 4-bit color index within the sub-palette is in the CDP as a texture.
+  uint8_t i_palette() const { return (pal_data >> 4 | pal_data) & 0xF; }
+
 } __attribute__((packed));
 static_assert(sizeof(TexFace) == 28);
 
@@ -254,7 +269,7 @@ std::ostream& operator<<(std::ostream& os, const TexFace& f) {
   return os << "{" << name << " v:" << ToString(f.i_vert) << " n:["
             << StrCat<1>(f.i_normal(0), f.i_normal(1), f.i_normal(2),
                          f.i_normal(3))
-            << "] p:" << f.palette_index << " uv:["
+            << "] p:" << f.i_palette() << " uv:["
             << StrCat(f.uv0, f.uv1, f.uv2, f.uv3)
             << "] a:" << std::bitset<5>(f.flags_a())
             << " b:" << std::bitset<4>(f.flags_b())
@@ -315,7 +330,7 @@ struct Model {
 
   // Each face has a palette index used for color lookup.
   // We can draw the palette indices into a UV map the size of the texture.
-  //  'palette' contains the palette_index for each texel.
+  //  'palette' contains the 4-msb of the palette_index for each texel.
   //  'mask' is 255 wherever palette values were set, 0 otherwise.
   void DrawPaletteUvs(Image& palette, Image& mask) const {
     CHECK_EQ(palette.width, 256);
@@ -325,13 +340,16 @@ struct Model {
     CHECK_EQ(mask.height, 256);
     CHECK_EQ(mask.channels, 1);
     for (const auto& f : tex_tris) {
-      // TODO(commongear): We're always turning on the brake lights...
-      const uint8_t value = f.palette_index == 194 ? 195 : f.palette_index;
+      uint8_t value = (f.i_palette() << 4);
+      // TODO(commongear): this always turns the brake lights on.
+      if (value == 224) value = 240;
       palette.DrawTriangle(f.uv0, f.uv1, f.uv2, value);
       mask.DrawTriangle(f.uv0, f.uv1, f.uv2, 255);
     }
     for (const auto& f : tex_quads) {
-      const uint8_t value = f.palette_index == 194 ? 195 : f.palette_index;
+      uint8_t value = (f.i_palette() << 4);
+      // TODO(commongear): this always turns the brake lights on.
+      if (value == 224) value = 240;
       palette.DrawTriangle(f.uv0, f.uv1, f.uv2, value);
       palette.DrawTriangle(f.uv0, f.uv2, f.uv3, value);
       mask.DrawTriangle(f.uv0, f.uv1, f.uv2, 255);
@@ -477,7 +495,7 @@ struct CarObject {
 
     out.shadow = Shadow::FromStream(s);
 
-    CHECK_EQ(s.remain(), 0);  // Not strictly necessary?
+    CHECK_EQ(s.remain(), 0);
     return out;
   }
 
@@ -550,61 +568,70 @@ std::ostream& operator<<(std::ostream& os, const CarObject& f) {
 
 // Stored in a 'cdp' (daytime tracks) or 'cnp' (nighttime tracks).
 struct CarPix {
+  struct Header {
+    uint16_t num_palettes;
+    // One for each palette.
+    uint8_t palette_id[30];
+  };
+  static_assert(sizeof(Header) == 32);
+
   struct Palette {
     Color16 data[256];
-    uint8_t unknown[64];
+    // 1-bit/color: if set, color is unaffected by lighting.
+    uint16_t is_emissive_data[16];
+    // 1-bit/color: if set, part of a "painted" section (i.e. not windows).
+    uint16_t is_painted_data[16];
+    // True if the color at index 'i' is emissive.
+    bool is_emissive(int i) const {
+      return (is_emissive_data[i / 16] >> (i % 16)) & 0x1;
+    }
+    // True if the color at index 'i' is part of a "painted" section.
+    bool is_painted(int i) const {
+      return (is_painted_data[i / 16] >> (i % 16)) & 0x1;
+    }
   } __attribute__((packed));
   static_assert(sizeof(Palette) == 576);
 
-  // Currently guessed by me...
-  int width = 0;
-  int height = 0;
+  // Always the same.
+  const int width = 256;
+  const int height = 256;   // TODO(commongear): 224.
 
   // As-read from the file.
-  uint8_t num_palettes = 0;
-  std::vector<uint8_t> unknown1;  // Some data in here...
+  Header header;
   std::vector<Palette> palettes;
   // If we've read the palettes right, this should be all zeros.
   std::vector<uint8_t> padding;
-  // 4-bits per pixel, indices into a sub-palette of 16 colors.
+  // 4-bpp: stores the low bits of the palette index for each texel.
+  // High bits are stored on each face in the CDO.
   std::vector<uint8_t> data;
   std::vector<uint8_t> unknown4;  // Should be empty.
-
-  // Returns the 4 MSB of the palette index. The four LSB come from the 4bpp
-  // texture data. See Texture().
-  // QUIRK: Palette indices are stored very oddly. They appear to be in the two
-  // MSB and two LSB of an unsigned 8-bit number. The four middle bits appear to
-  // be zero.
-  static uint8_t PaletteToHighBits(uint8_t i) { return (i | (i << 4)) & 0xF0; }
 
   template <typename Stream>
   static CarPix FromStream(Stream& s) {
     CarPix out;
-    // TODO(commongear): read the actual correct size.
-    // TODO(commongear): UVs aren't generated correctly for non-square images.
-    out.width = 256;
-    out.height = 256;  // TODO(commongear): Is this actually 220 or something?
-    // TODO(commongear): lots of data in here...
-    out.num_palettes = s.template Read<uint8_t>();
-    out.unknown1 = s.template Read<uint8_t>(31);
+    out.header = s.template Read<Header>();
 
-    // Read palettes. There's always space for 30 in the file.
+    // There are always slots for 30 palettes in the file.
     constexpr int kMaxPalettes = 30;
-    CHECK_LE(out.num_palettes, kMaxPalettes);
-    out.palettes = s.template Read<Palette>(out.num_palettes);
-    const int pad_size = (kMaxPalettes - out.num_palettes) * sizeof(Palette);
+    CHECK_LE(out.header.num_palettes, kMaxPalettes);
+
+    // Read them.
+    out.palettes = s.template Read<Palette>(out.header.num_palettes);
+    const int pad_size =
+        (kMaxPalettes - out.header.num_palettes) * sizeof(Palette);
+
+    // If we read the palettes correctly, the remaining slots should be zero.
     out.padding = s.template Read<uint8_t>(pad_size);
     CHECK(IsZero(out.padding));
-
-    // Image data begins here.
     CHECK_EQ(s.pos(), 17312);
-    // 4 bits per pixel.
-    // TODO(commongear): how much data is actually here???
-    out.data = s.template Read<uint8_t>(out.width * 224 / 2);
-    out.data.resize(out.width * out.height / 2, 255);
-    // TODO(commongear): Anything here?
-    if (s.remain() > 0) out.unknown4 = s.template Read<uint8_t>(s.remain());
 
+    // 4 bits per pixel, so divide by 2.
+    out.data = s.template Read<uint8_t>(out.width * 224 / 2);
+
+    // TODO(commongear): This should be done in the OBJ exporter, or not at all.
+    out.data.resize(256 * 256);
+
+    CHECK_EQ(s.remain(), 0);
     return out;
   }
 
@@ -628,32 +655,33 @@ struct CarPix {
   // The 'palette_index' from the obj data point to a row in this palette.
   // The 4-bit value in the pixels of this image select a column.
   Image PaletteImage(int p) const {
-    const int dim = std::ceil(
-        std::sqrt(sizeof(palettes[p].data) / sizeof(palettes[p].data[0])));
-    Image out(dim, dim, 3);
+    constexpr int kDim = 16;
+    static_assert(kDim * kDim * sizeof(uint16_t) == sizeof(Palette::data));
+    Image out(kDim, kDim, 3);
     out.pixels.clear();
     for (const Color16 c : palettes[p].data) {
       out.pixels.push_back(c.r());
       out.pixels.push_back(c.g());
       out.pixels.push_back(c.b());
     }
-    out.pixels.resize(dim * dim * 3);
+    CHECK_EQ(out.pixels.size() * 2, sizeof(Palette::data) * 3);
     return out;
   }
 
   // Unpacks the 32-bit RGBA texture stored in this CarPix using palette 'p'.
-  // The 'palette_index' must be the 8-bit value from each face of the 3d model,
-  // written into a UV-space image.
-  Image Texture(int p, const Image& palette_index) const {
+  // The 'palette_msb' must be the 4-bit value from each face of the 3d model,
+  // stored in the 4 MSB of each pixel in a UV-space image.
+  Image Texture(int p, const Image& palette_msb) const {
+    const Palette& palette = palettes[p];
     Image texture(width, height, 4);
     texture.pixels.clear();
     int i = 0;
     for (const uint8_t pixel : data) {
       {
-        const uint8_t pal = palette_index.pixels[i];
-        const uint8_t lo = pixel & 0xF;
-        const uint8_t hi = PaletteToHighBits(pal);
-        const Color16 c = palettes[p].data[lo | hi];
+        const uint8_t p_msb = palette_msb.pixels[i];
+        const uint8_t p_lsb = pixel & 0xF;
+        const uint8_t ic = p_msb | p_lsb;
+        const Color16 c = palette.data[ic];
         texture.pixels.push_back(c.r());
         texture.pixels.push_back(c.g());
         texture.pixels.push_back(c.b());
@@ -661,10 +689,10 @@ struct CarPix {
         ++i;
       }
       {
-        const uint8_t pal = palette_index.pixels[i];
-        const uint8_t lo = (pixel >> 4);
-        const uint8_t hi = PaletteToHighBits(pal);
-        const Color16 c = palettes[p].data[lo | hi];
+        const uint8_t p_msb = palette_msb.pixels[i];
+        const uint8_t p_lsb = (pixel >> 4);
+        const uint8_t ic = p_msb | p_lsb;
+        const Color16 c = palette.data[ic];
         texture.pixels.push_back(c.r());
         texture.pixels.push_back(c.g());
         texture.pixels.push_back(c.b());
@@ -672,6 +700,52 @@ struct CarPix {
         ++i;
       }
     }
+    // TODO(commongear): This should be done in the OBJ exporter.
+    // We'll use the first pixel of the last line to render un-textured faces.
+    const int last_line = 4 * width * (height - 1);
+    texture.pixels[last_line + 0] = 0;
+    texture.pixels[last_line + 1] = 0;
+    texture.pixels[last_line + 2] = 0;
+    texture.pixels[last_line + 3] = 255;
+    return texture;
+  }
+
+  // Creates a 32-bit RGBA texture for debugging color flags in palette 'p'.
+  //  'palette_msb': see comments on Texture().
+  // Output:
+  //   red:   255 if emissive, 0 otherwise.
+  //   red:   255 if emissive, 0 otherwise.
+  //   blue:  255 if painted, 0 otherwise.
+  Image FlagDebugTexture(int p, const Image& palette_msb) const {
+    const Palette& palette = palettes[p];
+    Image texture(width, height, 4);
+    texture.pixels.clear();
+    int i = 0;
+    for (const uint8_t pixel : data) {
+      {
+        const uint8_t p_msb = palette_msb.pixels[i];
+        const uint8_t p_lsb = pixel & 0xF;
+        const uint8_t ic = p_msb | p_lsb;
+        const Color16 c = palette.data[ic];
+        texture.pixels.push_back(palette.is_emissive(ic) ? 255 : 0);
+        texture.pixels.push_back(palette.is_emissive(ic) ? 255 : 0);
+        texture.pixels.push_back(palette.is_painted(ic) ? 255 : 0);
+        texture.pixels.push_back(c.opaque() ? 255 : 0);
+        ++i;
+      }
+      {
+        const uint8_t p_msb = palette_msb.pixels[i];
+        const uint8_t p_lsb = (pixel >> 4);
+        const uint8_t ic = p_msb | p_lsb;
+        const Color16 c = palette.data[ic];
+        texture.pixels.push_back(palette.is_emissive(ic) ? 255 : 0);
+        texture.pixels.push_back(palette.is_emissive(ic) ? 255 : 0);
+        texture.pixels.push_back(palette.is_painted(ic) ? 255 : 0);
+        texture.pixels.push_back(c.opaque() ? 255 : 0);
+        ++i;
+      }
+    }
+    // TODO(commongear): This should be done in the OBJ exporter.
     // We'll use the first pixel of the last line to render un-textured faces.
     const int last_line = 4 * width * (height - 1);
     texture.pixels[last_line + 0] = 0;
@@ -682,16 +756,27 @@ struct CarPix {
   }
 };
 
+std::ostream& operator<<(std::ostream& os, const CarPix::Header& h) {
+  return os << "{CarPix  num_palettes: " << h.num_palettes << "\n"
+            << " palette_ids: " << ToString(h.palette_id) << "}";
+}
+
 std::ostream& operator<<(std::ostream& os, const CarPix::Palette& p) {
-  return os << "data:\n"
-            << ToString<kSplitLines>(p.data)
-            << "\nunknown: " << ToString(p.unknown) << "\n";
+  for (int i = 0; i < 256; ++i) {
+    os << (i % 16 == 0 ? "\n" : " ");
+    p.data[i].WriteHex(os);
+    os << (p.data[i].force_opaque() ? "o" : "_")
+       << (p.is_emissive(i) ? "e" : "_") << (p.is_painted(i) ? "p" : "_");
+  }
+  return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const CarPix& p) {
-  os << "num_palettes: " << static_cast<int>(p.num_palettes)
-     << "\nunknown1: " << ToString(p.unknown1);
-  if (!p.unknown4.empty()) os << "\nunknown4: " << ToString(p.unknown4);
+  os << p.header << "\n";
+  // We don't need to write each palette color, but we can if we want to.
+  // for (int i = 0; i < p.header.num_palettes; ++i) {
+  //   os << p.palettes[i] << "\n";
+  // }
   return os;
 }
 

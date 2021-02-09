@@ -203,6 +203,9 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
     const Image palette = cdp.PaletteImage(i);
     Save(palette.ToPng(), texture_path + ".palette.png");
 
+    const Image flags = cdp.FlagDebugTexture(i, uv_palette.index);
+    Save(flags.ToPng(), texture_path + ".flags.png");
+
     const Image texture = cdp.Texture(i, uv_palette.index);
     Save(texture.ToPng(), texture_path + ".png");
   }

@@ -33,12 +33,13 @@ namespace gt2 {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Encodes the vertex scale.
-// TODO(commongear): there's a lot we don't quite know about this yet...
 //  value = 16 matches up with the default wheel positions in a CarObject.
 struct Scale16 {
   uint16_t value;
 
   // Multiply verts (or bounds) by this factor to match wheels in a CarObject.
+  //  - Seems to work for values of 15, 16, 17, 18. NOT_VERIFIED for others.
+  //  - UNKNOWN: are some of the 'value' bits use for something else?
   float factor() const {
     const int shift = 16 - static_cast<int>(value);
     if (shift < 0) {
@@ -68,7 +69,9 @@ struct Color16 {
   uint8_t g() const { return g5() << 3; }
   uint8_t b() const { return b5() << 3; }
 
-  // Opacity (for black, the padding bit is set to force opaque rendering).
+  // Opacity:
+  //  - Black is transparent by default.
+  //  - The padding bit is set to force opaque rendering? NOT_VERIFIED.
   bool opaque() const { return data != 0; }
   uint8_t force_opaque() const {
     return Unpack<uint8_t, /*bits=*/1, /*shift=*/15>(data);
@@ -138,7 +141,7 @@ struct Face {
   };
 
   // Flags A (Rendering order?):
-  //    1----: Unknown. Always seems to be set?
+  //    1----: UNKNOWN: Always seems to be set?
   //    -0000: Most of the body and inward-looking spoiler faces.
   //    -0001: Front, side windows and wheel wells (these windows overlap the
   //           hood, so maybe they want to render it after the rest of the
@@ -231,9 +234,9 @@ std::ostream& operator<<(std::ostream& os, const Face& f) {
 // One textured face (tri or quad).
 struct TexFace : Face {
   Vec2<uint8_t> uv0;
-  uint16_t palette_index;
+  uint16_t palette_index;  // UNKNOWN: why is the format so wacky?
   Vec2<uint8_t> uv1;
-  uint16_t unknown3;
+  uint16_t unknown3;  // UNKNOWN
   Vec2<uint8_t> uv2;
   Vec2<uint8_t> uv3;
 } __attribute__((packed));
@@ -272,14 +275,16 @@ struct Model {
     // Textured faces.
     uint16_t num_tex_tris = 0;
     uint16_t num_tex_quads = 0;
-    // Not always zero!
-    uint8_t unknown3[44];  // Some mystery data in here...
+
+    // Not zero!
+    uint8_t unknown3[44];  // UNKNOWN: Some mystery data in here...
 
     Vec4<int16_t> lo_bound;
     Vec4<int16_t> hi_bound;
     Scale16 scale;
-    uint8_t unknown4;
-    uint8_t unknown5;
+
+    uint8_t unknown4;  // UNKNOWN: Mystery data here too...
+    uint8_t unknown5;  // UNKNOWN: And here...
   } __attribute__((packed));
   static_assert(sizeof(Model::Header) == 80);
 
@@ -400,8 +405,8 @@ struct CarObject {
       Vec4<int16_t> hi_bound;
       Scale16 scale;
 
-      uint8_t unknown3;
-      uint8_t unknown4;
+      uint8_t unknown3;  // UNKNOWN: mystery data
+      uint8_t unknown4;  // UNKNOWN: mystery data
     };
     static_assert(sizeof(Header) == 28);
 
@@ -449,17 +454,20 @@ struct CarObject {
   Header header;
   std::vector<uint16_t> padding;  // All zeros?
   uint16_t num_lods;
-  std::vector<uint16_t> unknown1;  // Lots of stuff in here.
+  std::vector<uint16_t> unknown1;  // UNKNOWN: Lots of stuff in here.
   std::vector<Model> lods;
   Shadow shadow;
 
   template <typename Stream>
   static CarObject FromStream(Stream& s) {
     CarObject out;
+
     out.header = s.template Read<Header>();
     CHECK(out.header.Validate());
+
     out.padding = s.template Read<uint16_t>(0x828 / 2);
     CHECK(IsZero(out.padding));
+
     out.num_lods = s.template Read<uint16_t>();
     out.unknown1 = s.template Read<uint16_t>(13);
 
@@ -469,7 +477,7 @@ struct CarObject {
 
     out.shadow = Shadow::FromStream(s);
 
-    CHECK_EQ(s.remain(), 0);
+    CHECK_EQ(s.remain(), 0);  // Not strictly necessary?
     return out;
   }
 
@@ -522,8 +530,7 @@ std::ostream& operator<<(std::ostream& os, const CarObject::Shadow::Header& h) {
             << " verts  " << std::setw(2) << h.num_tris << " tris   "
             << std::setw(2) << h.num_quads << " quads  "
             << "\n unknown1: " << h.unknown1 << "\n lo: " << h.lo_bound
-            << "  hi: " << h.hi_bound
-            << "\n scale: " << h.scale
+            << "  hi: " << h.hi_bound << "\n scale: " << h.scale
             << "\n unknown3: " << static_cast<int>(h.unknown3)
             << "\n unknown4: " << static_cast<int>(h.unknown4) << "\n}";
 }

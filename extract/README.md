@@ -31,7 +31,12 @@ There's probably more, but here's what I know about:
 
 - No other formats are supported yet. (I'm working on `.tim`s and I have a
 partial understanding of how the sky backgrounds work).
-- A few cars have the wrong scale. (e.g. some of the Miatas)
 - Some cars have slightly wrong-looking wheel positions.
 - Rare: decals occasionally flicker.
 - I completely made up the geometry for wheels ;-)
+
+I've begun annotating the repo with tags in comments:
+
+- `TODO` something left to implement
+- `UNKNOWN` usually data, is something of a mystery
+- `NOT_VERIFIED` if it *might* work, but I haven't exhaustively checked.

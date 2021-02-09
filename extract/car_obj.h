@@ -113,10 +113,10 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
   // Lots of cars have decals with transparency applied to some of the faces.
   // We do some gymastics to get these to render properly on modern hardware.
 
-  // The decals share the same geometry with the face they're applied to, but
-  // obviously have a different texture, part of which is transparent. The decal
-  // faces alwasy seem to come before the base paint faces in CDO/CNO files, so
-  // if we reverse the face ordering, we can get the decals to render on top of
+  // The decals share geometry with the face they're applied to, but obviously
+  // have a different texture, part of which is transparent. The decal faces
+  // always seem to come before the base paint faces in CDO/CNO files, so if we
+  // reverse the face ordering, we can get the decals to render on top of
   // the base paint.
   auto tex_tris = m.tex_tris;
   auto tex_quads = m.tex_quads;

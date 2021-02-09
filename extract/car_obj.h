@@ -81,11 +81,18 @@ inline void TransferNormals(std::vector<TexFace>& faces) {
   need_normals.reserve(faces.size() / 4);
 
   // Pick out faces that don't have normals, keyed by vertex-indices.
+  //
+  // NOTE: some models have hidden faces with duplicate geometry, which look
+  // like errors that were missed by the original devs. By iterating over the
+  // faces in drawing order, we skip transferring normals to the those faces.
   for (auto& f : faces) {
     if (!f.has_normals()) need_normals[f.i_vert_data] = &f;
   }
 
   // Copy normals from faces with matching vertex indices.
+  //
+  // Also, other models have multiple faces with normals, sometimes with
+  // different UVs. Of these, the *first* face in the drawing order wins here.
   for (const auto& f : faces) {
     if (f.has_normals()) {
       const auto it = need_normals.find(f.i_vert_data);
@@ -102,6 +109,7 @@ inline void TransferNormals(std::vector<TexFace>& faces) {
 // is reused between calls.
 inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
   const float scale = m.header.scale.factor();
+
   // Lots of cars have decals with transparency applied to some of the faces.
   // We do some gymastics to get these to render properly on modern hardware.
 
@@ -123,48 +131,49 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
   TransferNormals(tex_tris);
   TransferNormals(tex_quads);
 
+  // Write the OBJ vertex data (positions, normals, uvs).
   for (const auto& v : m.verts) WriteObjVert(os, scale, v);
   for (const auto& n : m.normals) WriteObjNorm(os, n);
-
-  for (const auto& f : tex_tris) WriteObjUvs(os, f);
-  for (const auto& f : tex_quads) WriteObjUvs(os, f);
-  {  // Write a UV for untextured quads/tris at the end of the model.
+  {
+    // Write a UV for untextured quads/tris at the beginning of the model.
     // This is the pixel location where we stored the color for "untextured"
     // faces in the OBJ texture.
     const float x = 0.5 / 256.0;
     os << "vt " << x << " " << x << "\n";
   }
+  for (const auto& f : tex_tris) WriteObjUvs(os, f);
+  for (const auto& f : tex_quads) WriteObjUvs(os, f);
 
-  // Write textured faces that have normals using the 'Reflective' material.
-  os << "usemtl Reflective\n";
+  // Write untextured faces or ones with no reflections as 'Diffuse'.
+  os << "usemtl Diffuse\n";
+  for (const auto& f : m.tris) WriteObjFace(os, state, f);
+  for (const auto& f : m.quads) WriteObjFace(os, state, f);
+  state.i_uv += 1;  // Increment the UV index past the 'Untextured' UV.
+
+  // Write textured faces with NO NORMALS, also as 'Diffuse'.
   const int i_uv_start = state.i_uv;
   for (const auto& f : tex_tris) {
-    if (f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (!f.has_normals()) WriteObjFace<true>(os, state, f);
     state.i_uv += 3;
   }
   for (const auto& f : tex_quads) {
-    if (f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (!f.has_normals()) WriteObjFace<true>(os, state, f);
     state.i_uv += 4;
   }
   const int i_uv_end = state.i_uv;
 
-  // Write textured faces with NO NORMALS using the 'Diffuse' material.
-  os << "usemtl Diffuse\n";
+  // Write textured faces that have normals using the 'Reflective' material.
+  os << "usemtl Reflective\n";
   state.i_uv = i_uv_start;
   for (const auto& f : tex_tris) {
-    if (!f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (f.has_normals()) WriteObjFace<true>(os, state, f);
     state.i_uv += 3;
   }
   for (const auto& f : tex_quads) {
-    if (!f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (f.has_normals()) WriteObjFace<true>(os, state, f);
     state.i_uv += 4;
   }
   CHECK_EQ(state.i_uv, i_uv_end);
-
-  // Write the untextured faces.
-  for (const auto& f : m.tris) WriteObjFace(os, state, f);
-  for (const auto& f : m.quads) WriteObjFace(os, state, f);
-  state.i_uv += 1;  // Increment the UV index past the 'Untextured' UV.
 
   // Update the other counts with what we wrote.
   state.i_vert += m.verts.size();

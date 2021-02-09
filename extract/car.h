@@ -221,9 +221,11 @@ std::ostream& operator<<(std::ostream& os, const Face& f) {
     name = "UNKNOWN_FACE";
   }
   return os << "{" << name << " v:" << ToString(f.i_vert) << " n:"
-            << StrCat(f.i_normal(0), f.i_normal(1), f.i_normal(2),
-                      f.i_normal(3))
-            << "}";
+            << StrCat<1>(f.i_normal(0), f.i_normal(1), f.i_normal(2),
+                         f.i_normal(3))
+            << " a:" << std::bitset<5>(f.flags_a())
+            << " b:" << std::bitset<4>(f.flags_b())
+            << " c:" << std::bitset<6>(f.flags_d()) << "}";
 }
 
 // One textured face (tri or quad).
@@ -247,10 +249,13 @@ std::ostream& operator<<(std::ostream& os, const TexFace& f) {
     name = "UNKNOWN_TEX_FACE";
   }
   return os << "{" << name << " v:" << ToString(f.i_vert) << " n:["
-            << StrCat(f.i_normal(0), f.i_normal(1), f.i_normal(2),
-                      f.i_normal(3))
+            << StrCat<1>(f.i_normal(0), f.i_normal(1), f.i_normal(2),
+                         f.i_normal(3))
             << "] p:" << f.palette_index << " uv:["
-            << StrCat(f.uv0, f.uv1, f.uv2, f.uv3) << "]}";
+            << StrCat(f.uv0, f.uv1, f.uv2, f.uv3)
+            << "] a:" << std::bitset<5>(f.flags_a())
+            << " b:" << std::bitset<4>(f.flags_b())
+            << " c:" << std::bitset<6>(f.flags_d()) << "}";
 }
 
 // One level-of-detail (LOD) from a cno/cdo.

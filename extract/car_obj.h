@@ -153,11 +153,11 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
   // Write textured faces with NO NORMALS, also as 'Diffuse'.
   const int i_uv_start = state.i_uv;
   for (const auto& f : tex_tris) {
-    if (!f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (!f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
     state.i_uv += 3;
   }
   for (const auto& f : tex_quads) {
-    if (!f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (!f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
     state.i_uv += 4;
   }
   const int i_uv_end = state.i_uv;
@@ -166,11 +166,11 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
   os << "usemtl Reflective\n";
   state.i_uv = i_uv_start;
   for (const auto& f : tex_tris) {
-    if (f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
     state.i_uv += 3;
   }
   for (const auto& f : tex_quads) {
-    if (f.has_normals()) WriteObjFace<true>(os, state, f);
+    if (f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
     state.i_uv += 4;
   }
   CHECK_EQ(state.i_uv, i_uv_end);

@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <ostream>
+#include <unordered_map>
 #include <vector>
 
 #include "car.h"
@@ -99,8 +100,8 @@ inline void TransferNormals(std::vector<TexFace>& faces) {
 // Writes a model to an OBJ file and updates the counts in 'state'.
 // Multiple models can be written correctly to the same stream if the ObjState
 // is reused between calls.
-inline void WriteObj(std::ostream& os, ObjState& state, const Model& m,
-                     const float scale = 1.f) {
+inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
+  const float scale = m.header.scale.factor();
   // Lots of cars have decals with transparency applied to some of the faces.
   // We do some gymastics to get these to render properly on modern hardware.
 
@@ -231,6 +232,7 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
   wheels.reserve(4);
   for (int i = 0; i < 4; ++i) {
     wheels.push_back({});
+    wheels.back().header.scale.value = 16;
     MakeWheel(cdo.header.wheel_pos[i], cdo.header.wheel_size[i / 2],
               wheels.back());
   }
@@ -243,7 +245,7 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
     f << "mtllib " << name + "o.mtl\n";
 
     ObjState state;
-    WriteObj(f, state, cdo.lods[i], cdo.body_scale());
+    WriteObj(f, state, cdo.lods[i]);
     for (const auto& w : wheels) WriteObj(f, state, w);
   }
 

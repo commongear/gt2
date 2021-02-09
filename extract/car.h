@@ -32,6 +32,28 @@ namespace gt2 {
 // Data types.
 ////////////////////////////////////////////////////////////////////////////////
 
+// Encodes the vertex scale.
+// TODO(commongear): there's a lot we don't quite know about this yet...
+//  value = 16 matches up with the default wheel positions in a CarObject.
+struct Scale16 {
+  uint16_t value;
+
+  // Multiply verts (or bounds) by this factor to match wheels in a CarObject.
+  float factor() const {
+    const int shift = 16 - static_cast<int>(value);
+    if (shift < 0) {
+      return static_cast<float>(1 << -shift);
+    } else {
+      return static_cast<float>(1.f / (1 << shift));
+    }
+  }
+};
+static_assert(sizeof(Scale16) == 2);
+
+std::ostream& operator<<(std::ostream& os, const Scale16& s) {
+  return os << "{Scale16 value:" << s.value << " factor:" << s.factor() << "}";
+}
+
 // 16-bit packed RGB color.
 struct Color16 {
   uint16_t data;
@@ -246,7 +268,13 @@ struct Model {
     uint16_t num_tex_tris = 0;
     uint16_t num_tex_quads = 0;
     // Not always zero!
-    uint16_t unknown3[32];  // Some mystery data in here...
+    uint8_t unknown3[44];  // Some mystery data in here...
+
+    Vec4<int16_t> lo_bound;
+    Vec4<int16_t> hi_bound;
+    Scale16 scale;
+    uint8_t unknown4;
+    uint8_t unknown5;
   } __attribute__((packed));
   static_assert(sizeof(Model::Header) == 80);
 
@@ -303,12 +331,20 @@ struct Model {
 };
 
 std::ostream& operator<<(std::ostream& os, const Model::Header& h) {
-  return os << "{ Model\n verts: " << h.num_verts
-            << "\n norms: " << h.num_normals << "\n tris: " << h.num_tris
-            << "\n quads: " << h.num_quads << "\n ?? 1: " << h.unknown1
-            << "\n ?? 2: " << h.unknown2 << "\n tex_tris: " << h.num_tex_tris
-            << "\n tex_quads: " << h.num_tex_quads
-            << "\n unknown3: " << ToString(h.unknown3) << "\n}";
+  return os << "{ Model "                                          //
+            << std::setw(3) << h.num_verts << " verts  "           //
+            << std::setw(3) << h.num_normals << " norms  "         //
+            << std::setw(3) << h.num_tris << " tris   "            //
+            << std::setw(3) << h.num_quads << " quads  "           //
+            << std::setw(3) << h.num_tex_tris << " tex-tris   "    //
+            << std::setw(3) << h.num_tex_quads << " tex-quads  "   //
+            << "\n ?? 1: " << h.unknown1                           //
+            << "\n ?? 2: " << h.unknown2                           //
+            << "\n unknown3: " << ToHex(h.unknown3)                //
+            << "\n lo: " << h.lo_bound << "   hi: " << h.hi_bound  //
+            << "\n scale: " << h.scale                             //
+            << "\n ?? 4: " << static_cast<int>(h.unknown4)
+            << "\n ?? 5: " << static_cast<int>(h.unknown5) << "\n}";
 }
 
 std::ostream& operator<<(std::ostream& os, const Model& m) {
@@ -355,14 +391,10 @@ struct CarObject {
       uint16_t num_quads;
       uint16_t unknown1;
 
-      // This looks like collision bounds for the whole car at road level.
       Vec4<int16_t> lo_bound;
       Vec4<int16_t> hi_bound;
+      Scale16 scale;
 
-      // Scale for the whole car model (except wheels).
-      // Values appear comparable, so maybe they all have to do with scale?
-      uint8_t scale;
-      uint8_t unknown2;
       uint8_t unknown3;
       uint8_t unknown4;
     };
@@ -415,11 +447,6 @@ struct CarObject {
   std::vector<uint16_t> unknown1;  // Lots of stuff in here.
   std::vector<Model> lods;
   Shadow shadow;
-
-  // Multiply each vertex by this value to scale the body correctly relative to
-  // the wheels. Are there more than just two scales?
-  // TODO(commongear): I broke this when implementing the footer.
-  float body_scale() const { return (shadow.header.scale & 0x1) ? 2.0f : 1.0f; }
 
   template <typename Stream>
   static CarObject FromStream(Stream& s) {
@@ -486,12 +513,12 @@ std::ostream& operator<<(std::ostream& os, const CarObject::Header& h) {
 }
 
 std::ostream& operator<<(std::ostream& os, const CarObject::Shadow::Header& h) {
-  return os << "{ CarObject::Shadow\n nverts: " << h.num_verts
-            << "\n ntris: " << h.num_tris << "\n nquads: " << h.num_quads
-            << "\n unknown1: " << h.unknown1 << "\n car_lo: " << h.lo_bound
-            << "\n car_hi: " << h.hi_bound
-            << "\n scale: " << static_cast<int>(h.scale)
-            << "\n unknown2: " << static_cast<int>(h.unknown2)
+  return os << "{ CarObject::Shadow  " << std::setw(2) << h.num_verts
+            << " verts  " << std::setw(2) << h.num_tris << " tris   "
+            << std::setw(2) << h.num_quads << " quads  "
+            << "\n unknown1: " << h.unknown1 << "\n lo: " << h.lo_bound
+            << "  hi: " << h.hi_bound
+            << "\n scale: " << h.scale
             << "\n unknown3: " << static_cast<int>(h.unknown3)
             << "\n unknown4: " << static_cast<int>(h.unknown4) << "\n}";
 }

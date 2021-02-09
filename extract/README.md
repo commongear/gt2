@@ -20,8 +20,7 @@ code to see what it can do.
 ## CDO/CNO format
 
 - With normals! (see the comments in [car.h](car.h) for the format, and
-[car_obj.h](car_obj.h) for practical fixups and guidance for rendering as an
-OBJ).
+[car_obj.h](car_obj.h) for practical fixups and a method for rendering as OBJ).
 - Extraction to OBJ
 - Some data in the files is still a mystery to me. If you know something that's
 not implemented, perhaps open an issue?
@@ -35,6 +34,4 @@ partial understanding of how the sky backgrounds work).
 - A few cars have the wrong scale. (e.g. some of the Miatas)
 - Some cars have slightly wrong-looking wheel positions.
 - Rare: decals occasionally flicker.
-- Texture extraction is not pixel perfect. Occasionally, the wrong palette is
-used when there are nearby UV islands in the texture.
 - I completely made up the geometry for wheels ;-)

@@ -35,7 +35,7 @@ namespace gt2 {
 // Encodes the vertex scale.
 //  value = 16 matches up with the default wheel positions in a CarObject.
 struct Scale16 {
-  uint16_t value;
+  uint16_t value = 16;
 
   // Multiply verts (or bounds) by this factor to match wheels in a CarObject.
   //  - Seems to work for values of 15, 16, 17, 18. NOT_VERIFIED for others.
@@ -47,6 +47,11 @@ struct Scale16 {
     } else {
       return static_cast<float>(1.f / (1 << shift));
     }
+  }
+
+  // Base scale for value 16 is 4096 units / meter.
+  float to_meters() const {
+    return factor() / 4096.f;
   }
 };
 static_assert(sizeof(Scale16) == 2);

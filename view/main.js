@@ -134,7 +134,7 @@ function createGarage() {
   }
 
   // Floor.
-  const floor_geom = new THREE.CircleGeometry(7, 32);
+  const floor_geom = new THREE.CircleGeometry(3.5, 32);
   const floor_mat = new THREE.MeshBasicMaterial({color: 0x080808});
   const floor = new THREE.Mesh(floor_geom, floor_mat);
   floor_mat.alphaMap = createSoftCircleTexture(256);
@@ -227,7 +227,7 @@ class World {
     document.body.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(1, 1, 0.1, 100.0);
-    this.camera.position.set(-12, 3, -12);
+    this.camera.position.set(-6, 1.5, -6);
     this.camera.lookAt(new THREE.Vector3(0, 1, 0));
     this.setSize(window.innerWidth, window.innerHeight);
 

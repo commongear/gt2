@@ -28,14 +28,13 @@ struct ObjState {
 inline void WriteObjVert(std::ostream& os, const float scale,
                          const Vec4<int16_t>& v) {
   // Cars are described in something like millimeters?
-  const float k = 0.0005f * scale;
+  const float k = scale;
   os << "v " << k * v.x << " " << k * v.y << " " << k * v.z << "\n";
 }
 
 // Rescales a model normal and writes it to the stream.
 inline void WriteObjNorm(std::ostream& os, const Normal32& n) {
-  constexpr float k = 0.002f;
-  os << "vn " << k * n.x() << " " << k * n.y() << " " << k * n.z() << "\n";
+  os << "vn " << n.xf() << " " << n.yf() << " " << n.zf() << "\n";
 }
 
 // Extracts UVs from the given face and writes it to the OBJ.
@@ -108,7 +107,7 @@ inline void TransferNormals(std::vector<TexFace>& faces) {
 // Multiple models can be written correctly to the same stream if the ObjState
 // is reused between calls.
 inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
-  const float scale = m.header.scale.factor();
+  const float scale = m.header.scale.to_meters();
 
   // Lots of cars have decals with transparency applied to some of the faces.
   // We do some gymastics to get these to render properly on modern hardware.
@@ -244,7 +243,6 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
   wheels.reserve(4);
   for (int i = 0; i < 4; ++i) {
     wheels.push_back({});
-    wheels.back().header.scale.value = 16;
     MakeWheel(cdo.header.wheel_pos[i], cdo.header.wheel_size[i / 2],
               wheels.back());
   }

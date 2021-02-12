@@ -16,10 +16,15 @@ union Vec2 {
     T x, y;
   };
   T data[2];
+  uint16_t data2;
+
   Vec2() = default;
   Vec2(const T& _x, const T& _y) : x(_x), y(_y) {}
   bool operator==(const Vec2<T>& other) const {
     return std::memcmp(data, other.data, sizeof(data) * sizeof(T)) == 0;
+  }
+  bool operator<(const Vec2<T>& other) const {
+    return data2 < other.data2;
   }
 };
 
@@ -34,11 +39,16 @@ union Vec4 {
     T x, y, z, w;
   };
   T data[4];
+  uint32_t data4;
+
   Vec4() = default;
   Vec4(const T& _x, const T& _y, const T& _z, const T& _w)
       : x(_x), y(_y), z(_z), w(_w) {}
   bool operator==(const Vec2<T>& other) const {
     return std::memcmp(data, other.data, sizeof(data) * sizeof(T)) == 0;
+  }
+  bool operator<(const Vec4<T>& other) const {
+    return data4 < other.data4;
   }
 
   Vec4<T>& operator+=(const Vec4<T>& other) {

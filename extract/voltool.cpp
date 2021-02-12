@@ -5,6 +5,8 @@
 #include <iostream>
 #include <regex>
 
+#define STBI_ASSERT(x) CHECK(x)
+
 #include "car.h"
 #include "car_obj.h"
 #include "util/gzip.h"
@@ -14,6 +16,9 @@
 namespace miniz {
 #include "3p/miniz/miniz.c"
 }
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "3p/stb/stb_image.h"
 
 using namespace gt2;
 

@@ -27,7 +27,7 @@ inline std::string Load(const std::string& path) {
 
   std::string out(size, '\0');
   s.read(const_cast<char*>(out.data()), out.size());
-  CHECK(s.eof(), "Failed to read all of '", path, "'");
+  CHECK_EQ(s.tellg(), size, "Failed to read all of '", path, "'");
   return out;
 }
 
@@ -197,6 +197,43 @@ class FileInStream {
   int64_t size_ = 0;
 };
 
+// An output stream backed by a std::vector.
+class VecOutStream {
+ public:
+  // Empty.
+  VecOutStream() = default;
+
+  // Resizes the backing container.
+  void Resize(int64_t size) { data_.resize(size); }
+
+  // Writes one POD type.
+  template <typename T,
+            typename = std::enable_if_t<std::is_trivially_copyable<T>::value>>
+  void Write(const T& v) {
+    const int64_t pos = data_.size();
+    const int64_t size = sizeof(T);
+    data_.resize(pos + size);
+    std::memcpy(data_.data() + pos, &v, size);
+  }
+
+  // Writes many POD types.
+  template <typename T,
+            typename = std::enable_if_t<std::is_trivially_copyable<T>::value>>
+  void Write(const std::vector<T>& v) {
+    const int64_t pos = data_.size();
+    const int64_t size = v.size() * sizeof(T);
+    data_.resize(pos + size);
+    std::memcpy(data_.data() + pos, v.data(), size);
+  }
+
+  // Gets all the data as a string.
+  std::string GetData() const { 
+    return std::string(data_.data(), data_.size());
+  }
+
+ private:
+  std::vector<char> data_;
+};
 }  // namespace gt2
 
 #endif  // GT2_EXTRACT_IO_H_

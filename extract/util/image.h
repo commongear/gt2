@@ -7,7 +7,7 @@
 namespace miniz {
 #include "../3p/miniz/miniz.h"
 }
-
+#include "../3p/stb/stb_image.h"
 #include "inspect.h"
 #include "vec.h"
 
@@ -167,6 +167,23 @@ struct Image {
         pixels.data(), width, height, channels, &png_size, 6, MZ_FALSE);
     std::string out(reinterpret_cast<const char*>(png), png_size);
     miniz::mz_free(png);
+    return out;
+  }
+
+  // Unpacks an image from a PNG.
+  static Image FromPng(const std::string& data, int channels=4) {
+    int w = 0;
+    int h = 0;
+    int c = 0;
+    unsigned char* pixels = stbi_load_from_memory(
+        reinterpret_cast<const unsigned char*>(data.data()), data.size(), &w,
+        &h, &c, channels);
+    CHECK(w);
+    CHECK(h);
+    CHECK(c);
+    Image out(w, h, c);
+    std::memcpy(out.pixels.data(), pixels, out.pixels.size());
+    if (pixels) stbi_image_free(pixels);
     return out;
   }
 };

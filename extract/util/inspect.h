@@ -170,50 +170,50 @@ bool IsZero(const T& v) {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Logs the file, line, and any arguments and then calls exit(-1).
-#define FAIL(...)                                                \
-  do {                                                           \
-    std::cerr << "FAIL(" << __FILE__ << ":" << __LINE__ << ") "; \
-    WriteToOstream(std::cerr, ##__VA_ARGS__) << std::endl;       \
-    std::exit(-1);                                               \
+#define FAIL(...)                                                   \
+  do {                                                              \
+    ::std::cerr << "FAIL(" << __FILE__ << ":" << __LINE__ << ") ";  \
+    ::gt2::WriteToOstream(std::cerr, ##__VA_ARGS__) << ::std::endl; \
+    ::std::exit(-1);                                                \
   } while (false);
 
 // Converts a macro argument to a string.
 #define STR(a) #a
 
 // Checks if the following is true, converting the arguments to strings.
-#define CHECK(cond, ...)                          \
-  if (!(cond)) {                                  \
-    FAIL(STR(cond), " ", StrCat<1>(__VA_ARGS__)); \
+#define CHECK(cond, ...)                                 \
+  if (!(cond)) {                                         \
+    FAIL(STR(cond), " ", ::gt2::StrCat<1>(__VA_ARGS__)); \
   }
 
 // Prints the names and values of the operands, separated by the operator.
 #define BINARY_OP_STR(a, op, b) \
-  StrCat<1>("", STR(a), op, STR(b), " (", a, op, b, ") ")
+  ::gt2::StrCat<1>("", STR(a), op, STR(b), " (", a, op, b, ") ")
 
 // Checks (in)equality of the operands and prints them on failure.
-#define CHECK_EQ(a, b, ...)                                  \
-  if (!((a) == (b))) {                                       \
-    FAIL(BINARY_OP_STR(a, "==", b), StrCat<1>(__VA_ARGS__)); \
+#define CHECK_EQ(a, b, ...)                                         \
+  if (!((a) == (b))) {                                              \
+    FAIL(BINARY_OP_STR(a, "==", b), ::gt2::StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_NE(a, b, ...)                                  \
-  if (!((a) != (b))) {                                       \
-    FAIL(BINARY_OP_STR(a, "!=", b), StrCat<1>(__VA_ARGS__)); \
+#define CHECK_NE(a, b, ...)                                         \
+  if (!((a) != (b))) {                                              \
+    FAIL(BINARY_OP_STR(a, "!=", b), ::gt2::StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_LE(a, b, ...)                                  \
-  if (!((a) <= (b))) {                                       \
-    FAIL(BINARY_OP_STR(a, "<=", b), StrCat<1>(__VA_ARGS__)); \
+#define CHECK_LE(a, b, ...)                                         \
+  if (!((a) <= (b))) {                                              \
+    FAIL(BINARY_OP_STR(a, "<=", b), ::gt2::StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_GE(a, b, ...)                                  \
-  if (!((a) >= (b))) {                                       \
-    FAIL(BINARY_OP_STR(a, ">=", b), StrCat<1>(__VA_ARGS__)); \
+#define CHECK_GE(a, b, ...)                                         \
+  if (!((a) >= (b))) {                                              \
+    FAIL(BINARY_OP_STR(a, ">=", b), ::gt2::StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_LT(a, b, ...)                                 \
-  if (!((a) < (b))) {                                       \
-    FAIL(BINARY_OP_STR(a, "<", b), StrCat<1>(__VA_ARGS__)); \
+#define CHECK_LT(a, b, ...)                                        \
+  if (!((a) < (b))) {                                              \
+    FAIL(BINARY_OP_STR(a, "<", b), ::gt2::StrCat<1>(__VA_ARGS__)); \
   }
-#define CHECK_GT(a, b, ...)                                 \
-  if (!((a) > (b))) {                                       \
-    FAIL(BINARY_OP_STR(a, ">", b), StrCat<1>(__VA_ARGS__)); \
+#define CHECK_GT(a, b, ...)                                        \
+  if (!((a) > (b))) {                                              \
+    FAIL(BINARY_OP_STR(a, ">", b), ::gt2::StrCat<1>(__VA_ARGS__)); \
   }
 
 }  // namespace gt2

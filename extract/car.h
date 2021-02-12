@@ -77,6 +77,12 @@ struct Color16 {
     return Unpack<uint8_t, /*bits=*/1, /*shift=*/15>(data);
   }
 
+  // Sets data from r,g,b,force-opaque.
+  void SetRgb(uint8_t r, uint8_t g, uint8_t b, uint8_t force_opaque_bit = 0) {
+    data = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) |
+           ((force_opaque_bit & 0x1) << 15);
+  }
+
   // Writes the color as a standard RGB hex string.
   void WriteHex(std::ostream& os) const {
     using std::setfill;
@@ -103,17 +109,44 @@ struct Normal32 {
   // On disk, it would look like this:
   //  LSB [2 pad][10 x][10 y][10 z] MSB.
   uint32_t data;
+
+  // Unpacks the raw components.
   int16_t x() const { return Unpack<int16_t, /*bits=*/10, /*shfit=*/2>(data); }
   int16_t y() const { return Unpack<int16_t, /*bits=*/10, /*shfit=*/12>(data); }
   int16_t z() const { return Unpack<int16_t, /*bits=*/10, /*shfit=*/22>(data); }
 
+  // Sets the raw int16 x,y,z components.
+  void set(int16_t x, int16_t y, int16_t z) {
+    constexpr uint16_t m = LowBits<10, uint16_t>();
+    data = ((x & m) << 2) | ((y & m) << 12) | ((z & m) << 22);
+  }
+
+  // Raw length.
+  float len() const {
+    return std::sqrt(1.f * x() * x() + 1.f * y() * y() + 1.f * z() * z());
+  }
+
+  // Returns unit-vector components.
+  float xf() const { return x() * 1.f / 500.f; }
+  float yf() const { return y() * 1.f / 500.f; }
+  float zf() const { return z() * 1.f / 500.f; }
+
+  // Expects a unit vector.
+  void setf(float x, float y, float z) {
+    // Scaling by 499 and rounding down puts the components in a similar range
+    // as the original models.
+    constexpr float k = 499.0;
+    set(k * x, k * y, k * z);
+  }
+
+  // Unit length.
+  float lenf() const {
+    return std::sqrt(xf() * xf() + yf() * yf() + zf() * zf());
+  }
+
   // The length should be 1.0.
   bool Validate() const {
-    constexpr float k = 1.0f / 500.0f;
-    const float x = k * this->x();
-    const float y = k * this->y();
-    const float z = k * this->z();
-    const float l = std::sqrt(x * x + y * y + z * z);
+    const float l = lenf();
     return (0.995 <= l && l <= 1.0);
   }
 } __attribute__((packed));
@@ -211,6 +244,15 @@ struct Face {
     return 0;
   }
 
+  // Sets the normal indices.
+  void set_i_normals(uint16_t a, uint16_t b, uint16_t c, uint16_t d = 0) {
+    // TODO(commongear): this assumes the data and flags are cleared first...
+    data_a |= ((a & LowBits<9, uint16_t>()) << 5);
+    data_c |= ((b & LowBits<9, uint16_t>()) << 1);
+    data_c |= ((c & LowBits<9, uint16_t>()) << 10);
+    data_c |= ((d & LowBits<9, uint16_t>()) << 19);
+  }
+
   // Experimental: copies normal indices from the given face.
   void CopyNormalIndicesFrom(const Face& f) {
     // TODO(commongear): we copy some other bits too, but they're usually zero.
@@ -253,6 +295,7 @@ struct TexFace : Face {
   //  - It picks a 16 color chunk of the palette in the CDP.
   //  - The 4-bit color index within the sub-palette is in the CDP as a texture.
   uint8_t i_palette() const { return (pal_data >> 4 | pal_data) & 0xF; }
+  void set_i_palette(uint8_t i) { pal_data = (((i << 4) | i) & 0xC3); }
 
 } __attribute__((packed));
 static_assert(sizeof(TexFace) == 28);
@@ -319,13 +362,23 @@ struct Model {
     out.normals = s.template Read<Normal32>(out.header.num_normals);
     for (int i = 0; i < out.header.num_normals; ++i) {
       const Normal32& n = out.normals[i];
-      CHECK(n.Validate(), "Bad normal. i=", i, n);
+      CHECK(n.Validate(), "Bad normal. i=", i, n, n.len());
     }
     out.tris = s.template Read<Face>(out.header.num_tris);
     out.quads = s.template Read<Face>(out.header.num_quads);
     out.tex_tris = s.template Read<TexFace>(out.header.num_tex_tris);
     out.tex_quads = s.template Read<TexFace>(out.header.num_tex_quads);
     return out;
+  }
+
+  void Serialize(VecOutStream& out) const {
+    out.Write(header);
+    out.Write(verts);
+    out.Write(normals);
+    out.Write(tris);
+    out.Write(quads);
+    out.Write(tex_tris);
+    out.Write(tex_quads);
   }
 
   // Each face has a palette index used for color lookup.
@@ -466,6 +519,13 @@ struct CarObject {
       out.quads = s.template Read<Face>(out.header.num_quads);
       return out;
     }
+
+    void Serialize(VecOutStream& out) const {
+      out.Write(header);
+      out.Write(verts);
+      out.Write(tris);
+      out.Write(quads);
+    }
   };
 
   // As-read from the file.
@@ -497,6 +557,15 @@ struct CarObject {
 
     CHECK_EQ(s.remain(), 0);
     return out;
+  }
+
+  void Serialize(VecOutStream& out) const {
+    out.Write(header);
+    out.Write(padding);
+    out.Write(num_lods);
+    out.Write(unknown1);
+    for (const auto& m : lods) m.Serialize(out);
+    shadow.Serialize(out);
   }
 
   // Each model face contains a palette index. We can extract it to a UV map.
@@ -594,7 +663,7 @@ struct CarPix {
 
   // Always the same.
   const int width = 256;
-  const int height = 256;   // TODO(commongear): 224.
+  const int height = 256;  // TODO(commongear): 224.
 
   // As-read from the file.
   Header header;
@@ -604,7 +673,6 @@ struct CarPix {
   // 4-bpp: stores the low bits of the palette index for each texel.
   // High bits are stored on each face in the CDO.
   std::vector<uint8_t> data;
-  std::vector<uint8_t> unknown4;  // Should be empty.
 
   template <typename Stream>
   static CarPix FromStream(Stream& s) {
@@ -629,10 +697,23 @@ struct CarPix {
     out.data = s.template Read<uint8_t>(out.width * 224 / 2);
 
     // TODO(commongear): This should be done in the OBJ exporter, or not at all.
-    out.data.resize(256 * 256);
+    out.data.resize(256 * 128);
 
     CHECK_EQ(s.remain(), 0);
     return out;
+  }
+
+  void Serialize(VecOutStream& out) {
+    // There are always slots for 30 palettes in the file.
+    constexpr int kMaxPalettes = 30;
+    CHECK_LE(header.num_palettes, kMaxPalettes);
+    CHECK_EQ(header.num_palettes, palettes.size());
+    CHECK_EQ(data.size(), 256 * 224 / 2);
+
+    out.Write(header);
+    out.Write(palettes);
+    out.Resize(sizeof(Header) + kMaxPalettes * sizeof(Palette));
+    out.Write(data);
   }
 
   // Unpacks 4-bit pixel data into a renderable 8-bit image.

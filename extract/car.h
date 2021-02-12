@@ -141,7 +141,7 @@ struct Normal32 {
     // Scaling by 499 and rounding down puts the components in a similar range
     // as the original models.
     constexpr float k = 499.0;
-    set(k * x, k * y, k * z);
+    set(std::trunc(k * x), std::trunc(k * y), std::trunc(k * z));
   }
 
   // Unit length.

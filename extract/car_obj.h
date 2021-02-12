@@ -53,19 +53,12 @@ inline void WriteObjUvs(std::ostream& os, const TexFace& f) {
 }
 
 // Writes a textured or untextured tri or quad into the stream.
-// OBJ doesn't support untextured faces, so we're forced to cheat by allocating
-// one pixel from the texture as their color. Before writing untextured faces,
-// we push the UV of that color into the stream, and set 'increment_uv' to
-// false, writing the UV index for that color into the face.
-template <bool increment_uv = false>
 void WriteObjFace(std::ostream& os, const ObjState& s, const Face& f) {
   // Function to write one face element (v/uv/n)
   const auto write = [&](int i) {
-    const int v = f.i_vert[i] + s.i_vert;
-    const int uv = s.i_uv + (increment_uv ? i : 0);
-    const int n = f.i_normal(i) + s.i_normal;
-    os << " " << v << "/" << uv;
-    if (f.has_normals()) os << "/" << n;
+    os << " " << f.i_vert[i] + s.i_vert;
+    if (f.is_textured()) os << "/" << s.i_uv + i;
+    if (f.has_normals()) os << "/" <<  f.i_normal(i) + s.i_normal;
   };
   os << "f";
   write(0);
@@ -136,31 +129,23 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
   // Write the OBJ vertex data (positions, normals, uvs).
   for (const auto& v : m.verts) WriteObjVert(os, scale, v);
   for (const auto& n : m.normals) WriteObjNorm(os, n);
-  {
-    // Write a UV for untextured quads/tris at the beginning of the model.
-    // This is the pixel location where we stored the color for "untextured"
-    // faces in the OBJ texture.
-    const float x = 0.5 / 256.0;
-    const float y = 0.5 / 224.0;
-    os << "vt " << x << " " << y << "\n";
-  }
   for (const auto& f : tex_tris) WriteObjUvs(os, f);
   for (const auto& f : tex_quads) WriteObjUvs(os, f);
 
-  // Write untextured faces or ones with no reflections as 'Diffuse'.
-  os << "usemtl Diffuse\n";
+  // Write untextured faces.
+  os << "usemtl Untextured\n";
   for (const auto& f : m.tris) WriteObjFace(os, state, f);
   for (const auto& f : m.quads) WriteObjFace(os, state, f);
-  state.i_uv += 1;  // Increment the UV index past the 'Untextured' UV.
 
-  // Write textured faces with NO NORMALS, also as 'Diffuse'.
+  // Write textured faces with NO NORMALS as 'Diffuse'.
+  os << "usemtl Diffuse\n";
   const int i_uv_start = state.i_uv;
   for (const auto& f : tex_tris) {
-    if (!f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
+    if (!f.has_normals()) WriteObjFace(os, state, f);
     state.i_uv += 3;
   }
   for (const auto& f : tex_quads) {
-    if (!f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
+    if (!f.has_normals()) WriteObjFace(os, state, f);
     state.i_uv += 4;
   }
   const int i_uv_end = state.i_uv;
@@ -169,11 +154,11 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
   os << "usemtl Reflective\n";
   state.i_uv = i_uv_start;
   for (const auto& f : tex_tris) {
-    if (f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
+    if (f.has_normals()) WriteObjFace(os, state, f);
     state.i_uv += 3;
   }
   for (const auto& f : tex_quads) {
-    if (f.has_normals()) WriteObjFace</*increment_uv=*/true>(os, state, f);
+    if (f.has_normals()) WriteObjFace(os, state, f);
     state.i_uv += 4;
   }
   CHECK_EQ(state.i_uv, i_uv_end);
@@ -230,6 +215,12 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
     f << "  Ks 0.0 0.0 0.0\n";
     f << "  illum 1\n";
     f << "  map_Kd " << name + "p.0.png\n";
+    f << "\n";
+    f << "newmtl Untextured\n";
+    f << "  Ka 0.0 0.0 0.0\n";
+    f << "  Kd 0.0 0.0 0.0\n";
+    f << "  Ks 0.0 0.0 0.0\n";
+    f << "  illum 1\n";
     f << "\n";
   }
 

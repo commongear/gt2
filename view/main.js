@@ -356,8 +356,8 @@ class World {
       objLoader.setMaterials(m);
       objLoader.load(path + 'o.0.obj', o => {
         for (let m of getNestedMaterials(o)) {
-          m.alphaTest = 0.005;
           if (m.map) {
+            m.alphaTest = 0.005;
             setCarTexParams(m.map);
             model.updateSkin(0, m.map);
           }

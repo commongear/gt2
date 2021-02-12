@@ -228,11 +228,14 @@ struct Face {
   // NOTE: experimental. Not all faces may be correctly marked as quads or tris.
   bool is_tri() const { return (flags_d() >> 3) == 0x4; }
   bool is_quad() const { return (flags_d() >> 3) == 0x5; }
+  bool is_textured() const { return (flags_d() & 0x7) == 0x5; }
+  bool is_untextured() const { return (flags_d() & 0x7) == 0; }
 
   // Experimental: setters for various flags.
   void set_tri() { data_d |= (0x4 << 27); }
   void set_quad() { data_d |= (0x5 << 27); }
   void set_textured() { data_d |= (0x5 << 24); }
+  void set_untextured() { data_d &= ~(0x7 << 24); }
 
   // Extracts the normal index.
   uint16_t i_normal(int n) const {
@@ -783,13 +786,6 @@ struct CarPix {
         ++i;
       }
     }
-    // TODO(commongear): This should be done in the OBJ exporter.
-    // We'll use the first pixel of the last line to render un-textured faces.
-    const int last_line = 4 * width * (height - 1);
-    texture.pixels[last_line + 0] = 0;
-    texture.pixels[last_line + 1] = 0;
-    texture.pixels[last_line + 2] = 0;
-    texture.pixels[last_line + 3] = 255;
     return texture;
   }
 

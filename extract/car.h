@@ -668,7 +668,7 @@ struct CarPix {
 
   // Always the same.
   const int width = 256;
-  const int height = 256;  // TODO(commongear): 224.
+  const int height = 224;
 
   // As-read from the file.
   Header header;
@@ -699,10 +699,7 @@ struct CarPix {
     CHECK_EQ(s.pos(), 17312);
 
     // 4 bits per pixel, so divide by 2.
-    out.data = s.template Read<uint8_t>(out.width * 224 / 2);
-
-    // TODO(commongear): This should be done in the OBJ exporter, or not at all.
-    out.data.resize(256 * 128);
+    out.data = s.template Read<uint8_t>(out.width * out.height / 2);
 
     CHECK_EQ(s.remain(), 0);
     return out;
@@ -713,7 +710,7 @@ struct CarPix {
     constexpr int kMaxPalettes = 30;
     CHECK_LE(header.num_palettes, kMaxPalettes);
     CHECK_EQ(header.num_palettes, palettes.size());
-    CHECK_EQ(data.size(), 256 * 224 / 2);
+    CHECK_EQ(data.size(), width * height / 2);
 
     out.Write(header);
     out.Write(palettes);

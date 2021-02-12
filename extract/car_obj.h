@@ -39,13 +39,16 @@ inline void WriteObjNorm(std::ostream& os, const Normal32& n) {
 
 // Extracts UVs from the given face and writes it to the OBJ.
 inline void WriteObjUvs(std::ostream& os, const TexFace& f) {
-  constexpr float k = 1.0 / 256.0;
-  constexpr float d = 0.5 / 256.0;
-  os << "vt " << k * f.uv0.x + d << " " << (1.0 - k * f.uv0.y - d) << "\n";
-  os << "vt " << k * f.uv1.x + d << " " << (1.0 - k * f.uv1.y - d) << "\n";
-  os << "vt " << k * f.uv2.x + d << " " << (1.0 - k * f.uv2.y - d) << "\n";
+  constexpr float kX = 1.0 / 256.0;
+  constexpr float kY = 1.0 / 224.0;
+  constexpr float dX = 0.5 * kX;
+  constexpr float dY = 0.5 * kY;
+  os << "vt " << kX * f.uv0.x + dX << " " << (1.0 - kY * f.uv0.y - dY) << "\n";
+  os << "vt " << kX * f.uv1.x + dX << " " << (1.0 - kY * f.uv1.y - dY) << "\n";
+  os << "vt " << kX * f.uv2.x + dX << " " << (1.0 - kY * f.uv2.y - dY) << "\n";
   if (f.is_quad()) {
-    os << "vt " << k * f.uv3.x + d << " " << (1.0 - k * f.uv3.y - d) << "\n";
+    os << "vt " << kX * f.uv3.x + dX << " " << (1.0 - kY * f.uv3.y - dY)
+       << "\n";
   }
 }
 
@@ -138,7 +141,8 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
     // This is the pixel location where we stored the color for "untextured"
     // faces in the OBJ texture.
     const float x = 0.5 / 256.0;
-    os << "vt " << x << " " << x << "\n";
+    const float y = 0.5 / 224.0;
+    os << "vt " << x << " " << y << "\n";
   }
   for (const auto& f : tex_tris) WriteObjUvs(os, f);
   for (const auto& f : tex_quads) WriteObjUvs(os, f);

@@ -196,6 +196,9 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
 
     const Image texture = cdp.Texture(i, uv_palette.index);
     Save(texture.ToPng(), texture_path + ".png");
+
+    const Image brake_texture = cdp.BrakeLightTexture(i, uv_palette.index);
+    Save(brake_texture.ToPng(), texture_path + ".brake.png");
   }
 
   {  // Write the MTL file.

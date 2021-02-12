@@ -50,9 +50,7 @@ struct Scale16 {
   }
 
   // Base scale for value 16 is 4096 units / meter.
-  float to_meters() const {
-    return factor() / 4096.f;
-  }
+  float to_meters() const { return factor() / 4096.f; }
 };
 static_assert(sizeof(Scale16) == 2);
 
@@ -402,15 +400,11 @@ struct Model {
     CHECK_EQ(mask.channels, 1);
     for (const auto& f : tex_tris) {
       uint8_t value = (f.i_palette() << 4);
-      // TODO(commongear): this always turns the brake lights on.
-      if (value == 224) value = 240;
       palette.DrawTriangle(f.uv0, f.uv1, f.uv2, value);
       mask.DrawTriangle(f.uv0, f.uv1, f.uv2, 255);
     }
     for (const auto& f : tex_quads) {
       uint8_t value = (f.i_palette() << 4);
-      // TODO(commongear): this always turns the brake lights on.
-      if (value == 224) value = 240;
       palette.DrawTriangle(f.uv0, f.uv1, f.uv2, value);
       palette.DrawTriangle(f.uv0, f.uv2, f.uv3, value);
       mask.DrawTriangle(f.uv0, f.uv1, f.uv2, 255);
@@ -789,6 +783,54 @@ struct CarPix {
     return texture;
   }
 
+  // Unpacks the brake light texture for a palette (rest is transparent).
+  // See notes on 'Texture(...)' above.
+  Image BrakeLightTexture(int p, const Image& palette_msb) const {
+    const Palette& palette = palettes[p];
+    Image texture(width, height, 4);
+    texture.pixels.clear();
+    int i = 0;
+    for (const uint8_t pixel : data) {
+      {
+        if (palette_msb.pixels[i] == 224) {
+          const uint8_t p_msb = 240;
+          const uint8_t p_lsb = pixel & 0xF;
+          const uint8_t ic = p_msb | p_lsb;
+          const Color16 c = palette.data[ic];
+          texture.pixels.push_back(c.r());
+          texture.pixels.push_back(c.g());
+          texture.pixels.push_back(c.b());
+          texture.pixels.push_back(c.opaque() ? 255 : 0);
+        } else {
+          texture.pixels.push_back(0);
+          texture.pixels.push_back(0);
+          texture.pixels.push_back(0);
+          texture.pixels.push_back(0);
+        }
+        ++i;
+      }
+      {
+        if (palette_msb.pixels[i] == 224) {
+          const uint8_t p_msb = 240;
+          const uint8_t p_lsb = (pixel >> 4);
+          const uint8_t ic = p_msb | p_lsb;
+          const Color16 c = palette.data[ic];
+          texture.pixels.push_back(c.r());
+          texture.pixels.push_back(c.g());
+          texture.pixels.push_back(c.b());
+          texture.pixels.push_back(c.opaque() ? 255 : 0);
+        } else {
+          texture.pixels.push_back(0);
+          texture.pixels.push_back(0);
+          texture.pixels.push_back(0);
+          texture.pixels.push_back(0);
+        }
+        ++i;
+      }
+    }
+    return texture;
+  }
+
   // Creates a 32-bit RGBA texture for debugging color flags in palette 'p'.
   //  'palette_msb': see comments on Texture().
   // Output:
@@ -824,13 +866,6 @@ struct CarPix {
         ++i;
       }
     }
-    // TODO(commongear): This should be done in the OBJ exporter.
-    // We'll use the first pixel of the last line to render un-textured faces.
-    const int last_line = 4 * width * (height - 1);
-    texture.pixels[last_line + 0] = 0;
-    texture.pixels[last_line + 1] = 0;
-    texture.pixels[last_line + 2] = 0;
-    texture.pixels[last_line + 3] = 255;
     return texture;
   }
 };

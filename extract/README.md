@@ -9,7 +9,7 @@ work-in-progress, which will continue as long as I find it fun :-)
 Github and extract it.
 2. Open `cmd.exe` and `cd` to where you extracted the release.
 3. `cd extract` and run `voltool.exe` to get usage instructions.
-4. You'll need a GT2 VOL file to extract from. To extract your first model,
+4. You'll need a GT2 VOL file to extract from. To extract your first model,  
 `voltool.exe [path-to-your-VOL] getobjs ../view/models '.*tsgtr.*'`
 5. Follow the instructions to run the [OBJ viewer](../view/).
 

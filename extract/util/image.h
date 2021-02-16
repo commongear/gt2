@@ -4,6 +4,8 @@
 #ifndef GT2_EXTRACT_IMAGE_H_
 #define GT2_EXTRACT_IMAGE_H_
 
+#include <cstring>
+
 namespace miniz {
 #include "../3p/miniz/miniz.h"
 }
@@ -171,7 +173,7 @@ struct Image {
   }
 
   // Unpacks an image from a PNG.
-  static Image FromPng(const std::string& data, int channels=4) {
+  static Image FromPng(const std::string& data, int channels = 4) {
     int w = 0;
     int h = 0;
     int c = 0;

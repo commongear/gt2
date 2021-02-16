@@ -4,6 +4,7 @@
 #ifndef GT2_EXTRACT_CAR_H_
 #define GT2_EXTRACT_CAR_H_
 
+#include <bitset>
 #include <cmath>
 #include <ostream>
 #include <vector>

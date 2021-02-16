@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "./inspect.h"
+#include "inspect.h"
 
 namespace gt2 {
 
@@ -227,7 +227,7 @@ class VecOutStream {
   }
 
   // Gets all the data as a string.
-  std::string GetData() const { 
+  std::string GetData() const {
     return std::string(data_.data(), data_.size());
   }
 

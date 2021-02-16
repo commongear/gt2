@@ -2,20 +2,13 @@
 // MIT License (see https://github.com/commongear/gt2/blob/master/LICENSE)
 
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
-#include <map>
-#include <regex>
-#include <set>
-#include <sstream>
 
 #define STBI_ASSERT(x) CHECK(x)
 
 #include "car.h"
 #include "car_to_obj.h"
-#include "util/gzip.h"
 #include "util/io.h"
-#include "vol.h"
 
 namespace miniz {
 #include "3p/miniz/miniz.c"

@@ -1,12 +1,12 @@
 // Copyright (c) 2021 commongear
 // MIT License (see https://github.com/commongear/gt2/blob/master/LICENSE)
 
-#ifndef GT2_EXTRACT_VECTOR_H_
-#define GT2_EXTRACT_VECTOR_H_
+#ifndef GT2_EXTRACT_VEC_H_
+#define GT2_EXTRACT_VEC_H_
 
 #include <cstring>
 
-#include "./inspect.h"
+#include "inspect.h"
 
 namespace gt2 {
 
@@ -23,9 +23,7 @@ union Vec2 {
   bool operator==(const Vec2<T>& other) const {
     return std::memcmp(data, other.data, sizeof(data) * sizeof(T)) == 0;
   }
-  bool operator<(const Vec2<T>& other) const {
-    return data2 < other.data2;
-  }
+  bool operator<(const Vec2<T>& other) const { return data2 < other.data2; }
 };
 
 template <typename T>
@@ -47,9 +45,7 @@ union Vec4 {
   bool operator==(const Vec2<T>& other) const {
     return std::memcmp(data, other.data, sizeof(data) * sizeof(T)) == 0;
   }
-  bool operator<(const Vec4<T>& other) const {
-    return data4 < other.data4;
-  }
+  bool operator<(const Vec4<T>& other) const { return data4 < other.data4; }
 
   Vec4<T>& operator+=(const Vec4<T>& other) {
     for (int i = 0; i < 4; ++i) data[i] += other.data[i];
@@ -123,4 +119,4 @@ std::ostream& operator<<(std::ostream& os, const Vec4<T> v) {
 
 }  // namespace gt2
 
-#endif  // GT2_EXTRACT_VECTOR_H_
+#endif  // GT2_EXTRACT_VEC_H_

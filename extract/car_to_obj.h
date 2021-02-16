@@ -1,8 +1,8 @@
 // Copyright (c) 2021 commongear
 // MIT License (see https://github.com/commongear/gt2/blob/master/LICENSE)
 
-#ifndef GT2_EXTRACT_CAR_OBJ_H_
-#define GT2_EXTRACT_CAR_OBJ_H_
+#ifndef GT2_EXTRACT_CAR_TO_OBJ_H_
+#define GT2_EXTRACT_CAR_TO_OBJ_H_
 
 #include <cmath>
 #include <ostream>
@@ -265,4 +265,4 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
 
 }  // namespace gt2
 
-#endif  // GT2_EXTRACT_CAR_OBJ_H_
+#endif  // GT2_EXTRACT_CAR_TO_OBJ_H_

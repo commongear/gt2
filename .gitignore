@@ -2,7 +2,9 @@
 *.DS_Store
 /notes
 /extract/voltool
+/extract/voltool.exe
 /extract/cdotool
+/extract/cdotool.exe
 /view/models/*
 !/extract/README.md
 !/view/models/README.md

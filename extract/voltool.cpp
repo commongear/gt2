@@ -8,7 +8,7 @@
 #define STBI_ASSERT(x) CHECK(x)
 
 #include "car.h"
-#include "car_obj.h"
+#include "car_to_obj.h"
 #include "util/gzip.h"
 #include "util/io.h"
 #include "vol.h"
@@ -28,7 +28,8 @@ constexpr bool kAutoUnpackGz = true;
 static constexpr char kUsage[] =
 "Usage:  voltool path-to-vol command [args...]\n"
 "  path-to-vol:  path and filename of the VOL to load\n"
-"  command:      [dirs, list, get, getobjs, inspect] details below\n"
+"  command:      [dirs, list, get, getobjs, getobjs-nowheels, inspect]\n"
+"                details below\n"
 "  args...:      command arguments; details below\n"
 "\n"
 "Commands:\n"
@@ -56,7 +57,9 @@ static constexpr char kUsage[] =
 "    Converts matching files in the VOL to OBJ format and writes them to the "
 "      given path.\n"
 "    output-path:    folder in which to store extracted files\n"
-"    regex-pattern:  standard c++ regex\n";
+"    regex-pattern:  standard c++ regex\n"
+"  getobjs-nowheels output-path regex-pattern\n"
+"    Same as above, but doesn't build wheels for the model.";
 
 // Prints the usage message.
 void PrintUsage() {
@@ -125,7 +128,7 @@ void GetFiles(FileInStream& s, const Vol& vol, const std::string& out_path,
 
 // Extract OBJs for all known model types.
 void GetObjs(FileInStream& s, const Vol& vol, const std::string& out_path,
-             const std::string& pattern) {
+             const std::string& pattern, bool make_wheels) {
   const std::regex regex(pattern);
   for (const auto& f : vol.files) {
     const std::string path = vol.PathOf(f);
@@ -159,7 +162,7 @@ void GetObjs(FileInStream& s, const Vol& vol, const std::string& out_path,
             std::filesystem::path(full_name).filename().generic_string();
 
         // Write the OBJ data to the output path.
-        SaveObj(cdo, cdp, out_path, out_name);
+        SaveObj(cdo, cdp, out_path, out_name, make_wheels);
         std::cout << "Saved OBJ " << out_path + out_name + "..." << std::endl;
       } else if (EndsWith(full_name, ".cdp") || EndsWith(full_name, ".cnp")) {
         std::cout << "Use the .cdo/.cno filename to extract cars: " << full_name
@@ -244,7 +247,16 @@ int main(int argc, char** argv) {
     }
     const std::string out_path(argv[3]);
     const std::string pattern(argv[4]);
-    GetObjs(s, vol, out_path, pattern);
+    GetObjs(s, vol, out_path, pattern, /*make_wheels=*/true);
+  } else if (command == "getobjs-nowheels") {
+    if (argc <= 4) {
+      std::cerr << "\nNeed output-path and regex-pattern.\n" << std::endl;
+      PrintUsage();
+      return -1;
+    }
+    const std::string out_path(argv[3]);
+    const std::string pattern(argv[4]);
+    GetObjs(s, vol, out_path, pattern, /*make_wheels=*/false);
   } else if (command == "inspect") {
     // Get better information about files.
     if (argc <= 3) {

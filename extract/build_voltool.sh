@@ -7,7 +7,7 @@ else
   FILENAME=voltool
 fi
 
-clang++ --std=c++17 -O3 -g -fno-exceptions -Wall -Wextra -Werror \
+clang++ --std=c++17 -O0 -g -fno-exceptions -Wall -Wextra -Werror \
     -Wno-unused-parameter \
     -Wno-unused-const-variable \
     -Wno-unused-variable \

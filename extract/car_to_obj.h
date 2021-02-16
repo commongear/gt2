@@ -58,7 +58,7 @@ void WriteObjFace(std::ostream& os, const ObjState& s, const Face& f) {
   const auto write = [&](int i) {
     os << " " << f.i_vert[i] + s.i_vert;
     if (f.is_textured()) os << "/" << s.i_uv + i;
-    if (f.has_normals()) os << "/" <<  f.i_normal(i) + s.i_normal;
+    if (f.has_normals()) os << "/" << f.i_normal(i) + s.i_normal;
   };
   os << "f";
   write(0);
@@ -170,7 +170,8 @@ inline void WriteObj(std::ostream& os, ObjState& state, const Model& m) {
 
 // Writes the car object and pix files to an OBJ.
 inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
-                    const std::string& path, const std::string& name) {
+                    const std::string& path, const std::string& name,
+                    bool make_wheels) {
   CHECK(EndsWith(name, ".cd") || EndsWith(name, ".cn"),
         "Output name should end with '.cd' or '.cn' to avoid name collisions "
         "between models.",
@@ -238,11 +239,13 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
 
   // Make some wheels.
   std::vector<Model> wheels;
-  wheels.reserve(4);
-  for (int i = 0; i < 4; ++i) {
-    wheels.push_back({});
-    MakeWheel(cdo.header.wheel_pos[i], cdo.header.wheel_size[i / 2],
-              wheels.back());
+  if (make_wheels) {
+    wheels.reserve(4);
+    for (int i = 0; i < 4; ++i) {
+      wheels.push_back({});
+      MakeWheel(cdo.header.wheel_pos[i], cdo.header.wheel_size[i / 2],
+                wheels.back());
+    }
   }
 
   // Write an OBJ file for each LOD.

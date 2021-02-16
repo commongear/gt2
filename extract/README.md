@@ -48,7 +48,7 @@ code to see what it can do.
 # CDO/CNO format
 
 - With normals! (see the comments in [car.h](car.h) for the format, and
-[car_obj.h](car_obj.h) for practical fixups and a method for rendering as OBJ).
+[car_to_obj.h](car_to_obj.h) for practical fixups and a method for rendering as OBJ).
 - Extraction to OBJ
 - Some data in the files is still a mystery to me. If you know something that's
 not implemented, perhaps open an issue?

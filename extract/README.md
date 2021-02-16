@@ -5,7 +5,8 @@ work-in-progress, which will continue as long as I find it fun :-)
 
 # Quickstart
 
-1. Grab a Windows release from Github and extract it.
+1. Grab a [Windows release](https://github.com/commongear/gt2/releases) from
+Github and extract it.
 2. Open `cmd.exe` and `cd` to where you extracted the release.
 3. `cd extract` and run `voltool.exe` to get usage instructions.
 4. You'll need a GT2 VOL file to extract from. To extract your first model,

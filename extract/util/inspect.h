@@ -143,6 +143,20 @@ inline bool StartsWith(std::string_view s, std::string_view prefix) {
   return std::equal(prefix.begin(), prefix.end(), s.begin());
 }
 
+// Splits a string by the given separator.
+std::vector<std::string_view> Split(std::string_view in, std::string_view sep) {
+  std::vector<std::string_view> out;
+  out.reserve(4);
+  std::string_view rest = in;
+  while (true) {
+    size_t end = rest.find(sep);
+    out.push_back(rest.substr(0, end));
+    if (end == std::string_view::npos) break;
+    rest = rest.substr(end + 1);
+  }
+  return out;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Check for data which is all zero.
 ////////////////////////////////////////////////////////////////////////////////

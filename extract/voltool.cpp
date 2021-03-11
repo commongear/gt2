@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
     ListFiles(vol, pattern);
   } else if (command == "get") {
     // Pull files out of the VOL.
-    if (argc <= 4) {
+    if (argc != 5) {
       std::cerr << "\nNeed output-path and regex-pattern.\n" << std::endl;
       PrintUsage();
       return -1;
@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
     const std::string pattern(argv[4]);
     GetFiles(s, vol, out_path, pattern);
   } else if (command == "getobjs") {
-    if (argc <= 4) {
+    if (argc != 5) {
       std::cerr << "\nNeed output-path and regex-pattern.\n" << std::endl;
       PrintUsage();
       return -1;
@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
     const std::string pattern(argv[4]);
     GetObjs(s, vol, out_path, pattern, /*make_wheels=*/true);
   } else if (command == "getobjs-nowheels") {
-    if (argc <= 4) {
+    if (argc != 5) {
       std::cerr << "\nNeed output-path and regex-pattern.\n" << std::endl;
       PrintUsage();
       return -1;
@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
     GetObjs(s, vol, out_path, pattern, /*make_wheels=*/false);
   } else if (command == "inspect") {
     // Get better information about files.
-    if (argc <= 3) {
+    if (argc != 4) {
       std::cerr << "\nNeed a regex-pattern.\n" << std::endl;
       PrintUsage();
       return -1;

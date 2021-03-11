@@ -39,59 +39,82 @@ void DrawLine(Vec2<T> a, const Vec2<T> b, R& result) {
 }
 
 // A very basic image.
+template <typename T>
 struct Image {
   int width = 0;
   int height = 0;
   int channels = 0;
-  std::vector<uint8_t> pixels;
+  std::vector<T> pixels;
 
   // Allocate a blank image of the given size.
   Image(int w, int h, int c)
       : width(w), height(h), channels(c), pixels(w * h * c) {}
 
   // Get pixel data.
-  uint8_t& at(int x, int y) { return pixels[x + y * width]; }
-  const uint8_t& at(int x, int y) const { return pixels[x + y * width]; }
+  T& at(int x, int y) { return pixels[x + y * width]; }
+  const T& at(int x, int y) const { return pixels[x + y * width]; }
 
   // Draws a line between pixel coordinates 'a' and 'b'.
   // No bounds checking.
-  template <typename T>
-  void DrawLine(const Vec2<T> a, const Vec2<T> b, uint8_t value) {
+  template <typename U>
+  void DrawLine(const Vec2<U> a, const Vec2<U> b, T value) {
     struct Setter {
       void Set(const Vec2<T> v) { im->at(v.x, v.y) = value; }
       Image* im;
-      uint8_t value;
+      T value;
     } s = {this, value};
     ::gt2::DrawLine(a, b, s);
+  }
+
+  void Clear() {
+    std::memset(pixels.data(), 0, pixels.size() * sizeof(T));
   }
 
   // Draws a filled triangle between pixel coordinates 'a', 'b', and 'c'.
   // No specific vertex ordering required.
   // No bounds checking.
-  template <typename T>
-  void DrawTriangle(const Vec2<T> a, const Vec2<T> b, const Vec2<T> c,
-                    uint8_t value) {
+  template <typename U>
+  void DrawTriangle(const Vec2<U> a, const Vec2<U> b, const Vec2<U> c,
+                    T value) {
     constexpr int kMin = std::numeric_limits<int>::min();
     constexpr int kMax = std::numeric_limits<int>::max();
+    // First and last pixel to fill on a particular row.
     struct Bounds {
       int lo = kMax;
       int hi = kMin;
     };
+    // For each row in the image, create a set of bounds.
     std::vector<Bounds> to_draw(height);
+    // This setter updates the bounds at the given row for each call.
     struct Lines {
-      void Set(Vec2<T> v) {
+      void Set(Vec2<U> v) {
         to_draw[v.y].lo = std::min(to_draw[v.y].lo, static_cast<int>(v.x));
         to_draw[v.y].hi = std::max(to_draw[v.y].hi, static_cast<int>(v.x));
       }
       std::vector<Bounds>& to_draw;
     } s = {to_draw};
+    // Draw the outlines of the triangle into 'to_draw'.
     ::gt2::DrawLine(a, b, s);
     ::gt2::DrawLine(a, c, s);
     ::gt2::DrawLine(b, c, s);
+    // Set image pixels within the triangles bounds to the desired value.
     for (int y = 0; y < height; ++y) {
       const Bounds& b = to_draw[y];
-      const int hi = std::min(width, b.hi);
+      const int hi = std::min(width - 1, b.hi);
       for (int x = b.lo; x <= hi; ++x) at(x, y) = value;
+    }
+  }
+
+  // Draws a quad between bounds 'a' and 'b', inclusive.
+  template <typename U>
+  void DrawQuad(const Vec2<U> a, const Vec2<U> b, T value) {
+    const Vec2<U> lo(std::max(U(0), std::min(a.x, b.x)),
+                     std::max(U(0), std::min(a.y, b.y)));
+    const Vec2<U> hi(std::min(U(width), U(1) + std::max(a.x, b.x)),
+                     std::min(U(height), U(1) + std::max(a.y, b.y)));
+    for (int y = lo.y; y < hi.y; ++y) {
+      const int x0 = width * y;
+      for (int x = lo.x; x < hi.x; ++x) pixels[x0 + x] = value;
     }
   }
 
@@ -129,7 +152,7 @@ struct Image {
   //     - Copy the pixel value from 'a' to 'b'.
   //     - Set mask(b) = 255.
   // Returns 'true' if any pixels were changed.
-  bool GrowBorders(Image& mask) {
+  bool GrowBorders(Image<uint8_t>& mask) {
     CHECK_EQ(channels, 1);
     CHECK_EQ(width, mask.width);
     CHECK_EQ(height, mask.height);
@@ -164,6 +187,7 @@ struct Image {
 
   // Converts this image to a PNG.
   std::string ToPng() const {
+    static_assert(sizeof(T) == 1);
     size_t png_size = 0;
     void* png = miniz::tdefl_write_image_to_png_file_in_memory_ex(
         pixels.data(), width, height, channels, &png_size, 6, MZ_FALSE);
@@ -173,7 +197,7 @@ struct Image {
   }
 
   // Unpacks an image from a PNG.
-  static Image FromPng(const std::string& data, int channels = 4) {
+  static Image<uint8_t> FromPng(const std::string& data, int channels = 4) {
     int w = 0;
     int h = 0;
     int c = 0;
@@ -189,6 +213,9 @@ struct Image {
     return out;
   }
 };
+
+using Image8 = Image<uint8_t>;
+using Image16 = Image<uint16_t>;
 
 }  // namespace gt2
 

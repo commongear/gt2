@@ -6,6 +6,7 @@
 
 #include <bitset>
 #include <cmath>
+#include <functional>
 #include <ostream>
 #include <vector>
 
@@ -61,7 +62,7 @@ std::ostream& operator<<(std::ostream& os, const Scale16& s) {
 
 // 16-bit packed RGB color.
 struct Color16 {
-  uint16_t data;
+  uint16_t data = 0;
 
   // 5-bit colors.
   uint8_t r5() const { return Unpack<uint8_t, /*bits=*/5, /*shift=*/0>(data); }
@@ -73,6 +74,14 @@ struct Color16 {
   uint8_t g() const { return g5() << 3; }
   uint8_t b() const { return b5() << 3; }
 
+  // From 8-bit color.
+  static Color16 FromRgb8(uint8_t r, uint8_t g, uint8_t b,
+                          uint8_t force_opaque = 0) {
+    Color16 out;
+    out.SetRgb(r, g, b, force_opaque);
+    return out;
+  }
+
   // Opacity:
   //  - Black is transparent by default.
   //  - The padding bit is set to force opaque rendering? NOT_VERIFIED.
@@ -82,9 +91,9 @@ struct Color16 {
   }
 
   // Sets data from r,g,b,force-opaque.
-  void SetRgb(uint8_t r, uint8_t g, uint8_t b, uint8_t force_opaque_bit = 0) {
+  void SetRgb(uint8_t r, uint8_t g, uint8_t b, uint8_t force_opaque = 0) {
     data = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) |
-           ((force_opaque_bit & 0x1) << 15);
+           ((force_opaque ? 1 : 0) << 15);
   }
 
   // Writes the color as a standard RGB hex string.
@@ -95,6 +104,10 @@ struct Color16 {
        << setw(2) << setfill('0') << std::hex << static_cast<int>(g())
        << setw(2) << setfill('0') << std::hex << static_cast<int>(b());
   }
+
+  bool operator==(const Color16& c) const { return data == c.data; }
+  bool operator!=(const Color16& c) const { return data != c.data; }
+  bool operator<(const Color16& c) const { return data < c.data; }
 } __attribute__((packed));
 static_assert(sizeof(Color16) == 2);
 
@@ -102,6 +115,15 @@ std::ostream& operator<<(std::ostream& os, Color16 c) {
   return os << "{rgb " << static_cast<int>(c.r()) << " "
             << static_cast<int>(c.g()) << " " << static_cast<int>(c.b()) << " "
             << static_cast<int>(c.force_opaque()) << "}";
+}
+
+// Converts a Color16 to RGBA and pushes it into the given image.
+//  - Image must be 4-channel (not checked, for performance).
+inline void PushPixel(Image8& im, Color16 c) {
+  im.pixels.push_back(c.r());
+  im.pixels.push_back(c.g());
+  im.pixels.push_back(c.b());
+  im.pixels.push_back(c.opaque() ? 255 : 0);
 }
 
 // 32-bit packed fixed-point normal.
@@ -137,9 +159,7 @@ struct Normal32 {
 
   // Expects a unit vector.
   void setf(float x, float y, float z) {
-    // Scaling by 499 and rounding down puts the components in a similar range
-    // as the original models.
-    constexpr float k = 499.0;
+    constexpr float k = 500.0;
     set(std::trunc(k * x), std::trunc(k * y), std::trunc(k * z));
   }
 
@@ -151,7 +171,7 @@ struct Normal32 {
   // The length should be 1.0.
   bool Validate() const {
     const float l = lenf();
-    return (0.995 <= l && l <= 1.0);
+    return (0.995 <= l && l <= 1.005);
   }
 } __attribute__((packed));
 static_assert(sizeof(Normal32) == 4);
@@ -319,7 +339,7 @@ std::ostream& operator<<(std::ostream& os, const TexFace& f) {
   return os << "{" << name << " v:" << ToString(f.i_vert) << " n:["
             << StrCat<1>(f.i_normal(0), f.i_normal(1), f.i_normal(2),
                          f.i_normal(3))
-            << "] p:" << f.i_palette() << " uv:["
+            << "] p:" << static_cast<int>(f.i_palette()) << " uv:["
             << StrCat(f.uv0, f.uv1, f.uv2, f.uv3)
             << "] a:" << std::bitset<5>(f.flags_a())
             << " b:" << std::bitset<4>(f.flags_b())
@@ -342,14 +362,14 @@ struct Model {
     uint16_t num_tex_quads = 0;
 
     // Not zero!
-    uint8_t unknown3[44];  // UNKNOWN: Some mystery data in here...
+    uint8_t unknown3[44] = {};  // UNKNOWN: Some mystery data in here...
 
-    Vec4<int16_t> lo_bound;
-    Vec4<int16_t> hi_bound;
+    Vec4<int16_t> lo_bound = Vec4<int16_t>(0, 0, 0, 0);
+    Vec4<int16_t> hi_bound = Vec4<int16_t>(0, 0, 0, 0);
     Scale16 scale;
 
-    uint8_t unknown4;  // UNKNOWN: Mystery data here too...
-    uint8_t unknown5;  // UNKNOWN: And here...
+    uint8_t unknown4 = 0;  // UNKNOWN: Mystery data here too...
+    uint8_t unknown5 = 0;  // UNKNOWN: And here...
   } __attribute__((packed));
   static_assert(sizeof(Model::Header) == 80);
 
@@ -392,7 +412,7 @@ struct Model {
   // We can draw the palette indices into a UV map the size of the texture.
   //  'palette' contains the 4-msb of the palette_index for each texel.
   //  'mask' is 255 wherever palette values were set, 0 otherwise.
-  void DrawPaletteUvs(Image& palette, Image& mask) const {
+  void DrawPaletteUvs(Image8& palette, Image8& mask) const {
     CHECK_EQ(palette.width, 256);
     CHECK_EQ(palette.height, 256);
     CHECK_EQ(palette.channels, 1);
@@ -573,31 +593,34 @@ struct CarObject {
 
   // Each model face contains a palette index. We can extract it to a UV map.
   struct UvPalette {
-    Image index;  // Palette index for every texel.
-    Image mask;   // Zero where there are no UVs.
+    Image8 index;  // Palette index for every texel.
+    Image8 mask;   // Zero where there are no UVs.
   };
   UvPalette DrawUvPalette() const {
     UvPalette out{
-        Image(256, 256, 1),
-        Image(256, 256, 1),
+        // TODO(commongear): should be 224.
+        Image8(256, 256, 1),
+        Image8(256, 256, 1),
     };
     for (const auto& model : lods) {
       model.DrawPaletteUvs(out.index, out.mask);
     }
-    {                           // Draw the palette index for the wheel.
-      const uint8_t value = 0;  // TODO(commongear): is it always zero?
+    {  // Draw the palette index for the wheel.
+      const uint8_t value = 0;
       int x0 = 0;
-      for (int i = 0; i < 44; ++i) {
-        for (int x = 0; x < 44; ++x) {
+      for (int i = 0; i < 48; ++i) {
+        for (int x = 0; x < 48; ++x) {
           // Re-pack the wacky palette index.
-          out.index.pixels[x0 + x] = ((value << 4) | value) & 0xC3;
+          out.index.pixels[x0 + x] = 0;
           out.mask.pixels[x0 + x] = 255;
         }
         x0 += 256;
       }
     }
     // Grow the index and mask regions to cover any jagged, ambiguous edges.
-    out.index.GrowBorders(out.mask);
+    // TODO(commongear): this leaves a bunch of incorrect pixels around some
+    // faces. There should be a better way to do this...
+    // out.index.GrowBorders(out.mask);
     return out;
   }
 };
@@ -708,7 +731,7 @@ struct CarPix {
     constexpr int kMaxPalettes = 30;
     CHECK_LE(header.num_palettes, kMaxPalettes);
     CHECK_EQ(header.num_palettes, palettes.size());
-    CHECK_EQ(data.size(), width * height / 2);
+    CHECK_EQ(data.size(), width * height / 2);  // 4bpp.
 
     out.Write(header);
     out.Write(palettes);
@@ -720,8 +743,8 @@ struct CarPix {
   // Values are stored in the 4 MSB of the resulting pixels for better
   // visualization. However, the data actually forms the 4 LSB of an index into
   // the palette.
-  Image Pixels() const {
-    Image out(width, height, 1);
+  Image8 Pixels() const {
+    Image8 out(width, height, 1);
     out.pixels.clear();
     for (const uint8_t pixel : data) {
       const uint8_t a = (pixel << 4) & 0xF0;
@@ -735,49 +758,46 @@ struct CarPix {
   // Gets palette 'p' as an NxN image.
   // The 'palette_index' from the obj data point to a row in this palette.
   // The 4-bit value in the pixels of this image select a column.
-  Image PaletteImage(int p) const {
+  Image8 PaletteImage(int p) const {
     constexpr int kDim = 16;
     static_assert(kDim * kDim * sizeof(uint16_t) == sizeof(Palette::data));
-    Image out(kDim, kDim, 3);
+    Image8 out(kDim, kDim, 4);
     out.pixels.clear();
     for (const Color16 c : palettes[p].data) {
       out.pixels.push_back(c.r());
       out.pixels.push_back(c.g());
       out.pixels.push_back(c.b());
+      out.pixels.push_back(c.data == 0 ? 0 : 255);
     }
-    CHECK_EQ(out.pixels.size() * 2, sizeof(Palette::data) * 3);
+    CHECK_EQ(out.pixels.size() * 2, sizeof(Palette::data) * 4);
     return out;
   }
 
   // Unpacks the 32-bit RGBA texture stored in this CarPix using palette 'p'.
   // The 'palette_msb' must be the 4-bit value from each face of the 3d model,
   // stored in the 4 MSB of each pixel in a UV-space image.
-  Image Texture(int p, const Image& palette_msb) const {
+  Image8 Texture(int p, const Image8& palette_msb, const Image8& mask) const {
     const Palette& palette = palettes[p];
-    Image texture(width, height, 4);
+    Image8 texture(width, height, 4);
     texture.pixels.clear();
     int i = 0;
     for (const uint8_t pixel : data) {
       {
         const uint8_t p_msb = palette_msb.pixels[i];
-        const uint8_t p_lsb = pixel & 0xF;
-        const uint8_t ic = p_msb | p_lsb;
-        const Color16 c = palette.data[ic];
-        texture.pixels.push_back(c.r());
-        texture.pixels.push_back(c.g());
-        texture.pixels.push_back(c.b());
-        texture.pixels.push_back(c.opaque() ? 255 : 0);
+        if (mask.pixels[i]) {
+          PushPixel(texture, palette.data[p_msb | (pixel & 0xF)]);
+        } else {
+          PushPixel(texture, {});
+        }
         ++i;
       }
       {
         const uint8_t p_msb = palette_msb.pixels[i];
-        const uint8_t p_lsb = (pixel >> 4);
-        const uint8_t ic = p_msb | p_lsb;
-        const Color16 c = palette.data[ic];
-        texture.pixels.push_back(c.r());
-        texture.pixels.push_back(c.g());
-        texture.pixels.push_back(c.b());
-        texture.pixels.push_back(c.opaque() ? 255 : 0);
+        if (mask.pixels[i]) {
+          PushPixel(texture, palette.data[p_msb | (pixel >> 4)]);
+        } else {
+          PushPixel(texture, {});
+        }
         ++i;
       }
     }
@@ -786,9 +806,9 @@ struct CarPix {
 
   // Unpacks the brake light texture for a palette (rest is transparent).
   // See notes on 'Texture(...)' above.
-  Image BrakeLightTexture(int p, const Image& palette_msb) const {
+  Image8 BrakeLightTexture(int p, const Image8& palette_msb) const {
     const Palette& palette = palettes[p];
-    Image texture(width, height, 4);
+    Image8 texture(width, height, 4);
     texture.pixels.clear();
     int i = 0;
     for (const uint8_t pixel : data) {
@@ -796,17 +816,9 @@ struct CarPix {
         if (palette_msb.pixels[i] == 224) {
           const uint8_t p_msb = 240;
           const uint8_t p_lsb = pixel & 0xF;
-          const uint8_t ic = p_msb | p_lsb;
-          const Color16 c = palette.data[ic];
-          texture.pixels.push_back(c.r());
-          texture.pixels.push_back(c.g());
-          texture.pixels.push_back(c.b());
-          texture.pixels.push_back(c.opaque() ? 255 : 0);
+          PushPixel(texture, palette.data[p_msb | p_lsb]);
         } else {
-          texture.pixels.push_back(0);
-          texture.pixels.push_back(0);
-          texture.pixels.push_back(0);
-          texture.pixels.push_back(0);
+          PushPixel(texture, {});
         }
         ++i;
       }
@@ -814,17 +826,9 @@ struct CarPix {
         if (palette_msb.pixels[i] == 224) {
           const uint8_t p_msb = 240;
           const uint8_t p_lsb = (pixel >> 4);
-          const uint8_t ic = p_msb | p_lsb;
-          const Color16 c = palette.data[ic];
-          texture.pixels.push_back(c.r());
-          texture.pixels.push_back(c.g());
-          texture.pixels.push_back(c.b());
-          texture.pixels.push_back(c.opaque() ? 255 : 0);
+          PushPixel(texture, palette.data[p_msb | p_lsb]);
         } else {
-          texture.pixels.push_back(0);
-          texture.pixels.push_back(0);
-          texture.pixels.push_back(0);
-          texture.pixels.push_back(0);
+          PushPixel(texture, {});
         }
         ++i;
       }
@@ -836,11 +840,11 @@ struct CarPix {
   //  'palette_msb': see comments on Texture().
   // Output:
   //   red:   255 if emissive, 0 otherwise.
-  //   red:   255 if emissive, 0 otherwise.
+  //   green: 255 if emissive, 0 otherwise.
   //   blue:  255 if painted, 0 otherwise.
-  Image FlagDebugTexture(int p, const Image& palette_msb) const {
+  Image8 FlagDebugTexture(int p, const Image8& palette_msb) const {
     const Palette& palette = palettes[p];
-    Image texture(width, height, 4);
+    Image8 texture(width, height, 4);
     texture.pixels.clear();
     int i = 0;
     for (const uint8_t pixel : data) {
@@ -896,5 +900,14 @@ std::ostream& operator<<(std::ostream& os, const CarPix& p) {
 }
 
 }  // namespace gt2
+
+namespace std {
+template <>
+struct hash<gt2::Color16> {
+  std::size_t operator()(const gt2::Color16& c) const {
+    return std::hash<uint16_t>()(c.data);
+  }
+};
+}  // namespace std
 
 #endif  // GT2_EXTRACT_CAR_H_

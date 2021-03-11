@@ -53,7 +53,7 @@ inline void WriteObjUvs(std::ostream& os, const TexFace& f) {
 }
 
 // Writes a textured or untextured tri or quad into the stream.
-void WriteObjFace(std::ostream& os, const ObjState& s, const Face& f) {
+inline void WriteObjFace(std::ostream& os, const ObjState& s, const Face& f) {
   // Function to write one face element (v/uv/n)
   const auto write = [&](int i) {
     os << " " << f.i_vert[i] + s.i_vert;
@@ -195,7 +195,7 @@ inline void SaveObj(const CarObject& cdo, const CarPix& cdp,
     const Image flags = cdp.FlagDebugTexture(i, uv_palette.index);
     Save(flags.ToPng(), texture_path + ".flags.png");
 
-    const Image texture = cdp.Texture(i, uv_palette.index);
+    const Image texture = cdp.Texture(i, uv_palette.index, uv_palette.mask);
     Save(texture.ToPng(), texture_path + ".png");
 
     const Image brake_texture = cdp.BrakeLightTexture(i, uv_palette.index);

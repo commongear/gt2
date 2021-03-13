@@ -33,8 +33,10 @@ inline std::string Load(const std::string& path) {
 
 // Saves an entire file.
 inline void Save(const std::string& buffer, const std::string& path) {
-  std::filesystem::create_directories(
-      std::filesystem::path(path).parent_path());
+  const std::filesystem::path fspath(path);
+  if (fspath.has_parent_path()) {
+    std::filesystem::create_directories(fspath.parent_path());
+  }
 
   std::ofstream s(path, std::ios::out | std::ios::binary);
   CHECK(s.good(), "Failed to open for write '", path, "'");

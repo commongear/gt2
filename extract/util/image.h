@@ -47,12 +47,14 @@ struct Image {
   std::vector<T> pixels;
 
   // Allocate a blank image of the given size.
-  Image(int w, int h, int c)
+  Image(int w, int h, int c=0)
       : width(w), height(h), channels(c), pixels(w * h * c) {}
 
   // Get pixel data.
-  T& at(int x, int y) { return pixels[x + y * width]; }
-  const T& at(int x, int y) const { return pixels[x + y * width]; }
+  T& at(int x, int y, int c=0) { return pixels[channels * (x + y * width) + c]; }
+  const T& at(int x, int y, int c) const {
+    return pixels[channels * (x + y * width) + c];
+  }
 
   // Draws a line between pixel coordinates 'a' and 'b'.
   // No bounds checking.
@@ -66,9 +68,7 @@ struct Image {
     ::gt2::DrawLine(a, b, s);
   }
 
-  void Clear() {
-    std::memset(pixels.data(), 0, pixels.size() * sizeof(T));
-  }
+  void Clear() { std::memset(pixels.data(), 0, pixels.size() * sizeof(T)); }
 
   // Draws a filled triangle between pixel coordinates 'a', 'b', and 'c'.
   // No specific vertex ordering required.
@@ -153,10 +153,9 @@ struct Image {
   //     - Set mask(b) = 255.
   // Returns 'true' if any pixels were changed.
   bool GrowBorders(Image<uint8_t>& mask) {
-    CHECK_EQ(channels, 1);
-    CHECK_EQ(width, mask.width);
-    CHECK_EQ(height, mask.height);
-    CHECK_EQ(channels, mask.channels);
+    CHECK_EQ(mask.width, width);
+    CHECK_EQ(mask.height, height);
+    CHECK_EQ(mask.channels, 1);
 
     const int w = width;
     const int h = height;
@@ -165,7 +164,9 @@ struct Image {
 
     const auto pick = [&](int x, int y, int dx, int dy) {
       if (mask.at(x, y) == 0 && mask.at(x + dx, y + dy) > 0) {
-        at(x, y) = at(x + dx, y + dy);
+        for (int c = 0; c < channels; ++c) {
+          at(x, y, c) = at(x + dx, y + dy, c);
+        }
         mask.at(x, y) = 255;
         changed = true;
       }

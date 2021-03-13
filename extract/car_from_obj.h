@@ -21,6 +21,16 @@
 
 namespace gt2 {
 
+// Converts regular RGBA to gt2's 16-bit colors with opacity flag.
+//  - If 'a' is zero, the color is considered transparent.
+//  - Fully opaque otherwise.
+//  - The explicit opacity flag is only set for black.
+inline Color16 RgbaToColor16(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+  if (a == 0) return Color16(); // Empty if transparent.
+  const uint8_t force_opaque = (r == 0 && g == 0 && b == 0);
+  return Color16::FromRgb8(r, g, b, force_opaque);
+}
+
 // Converts an OBJ vector to a Car vector.
 inline Vec4<int16_t> ToCarVec(const Vec4<float>& meters, float scale) {
   return Vec4<int16_t>(scale * meters.x + 0.5f, scale * meters.y + 0.5f,
@@ -233,7 +243,7 @@ inline std::map<Color16, uint16_t> ExtractFacePalette(
       const uint8_t g = tex.pixels[x * 4 + tx0 + 1];
       const uint8_t b = tex.pixels[x * 4 + tx0 + 2];
       const uint8_t a = tex.pixels[x * 4 + tx0 + 3];
-      const auto color = Color16::FromRgb8(r, g, b, a);
+      const auto color = RgbaToColor16(r, g, b, a);
       ++p[color];
     }
   }
@@ -301,6 +311,35 @@ inline TexturePaletteData ExtractFacePalettes(const Image8& tex,
     ++face_index;
   }
   CHECK_EQ(face_index, num_faces);
+
+  return out;
+}
+
+// Extracts the color palette from 'tex' for the 48x48 px wheel area.
+inline TexturePaletteData ExtractWheelPalette(const Image8& tex) {
+  CHECK_EQ(tex.channels, 4);
+
+  // Only one palette to return.
+  TexturePaletteData out;
+  out.palettes.resize(1);
+  out.face_indices = Image16(tex.width, tex.height, /*channels=*/1);
+  constexpr auto kInvalidFace = std::numeric_limits<uint16_t>::max();
+  for (int i = 0; i < out.face_indices.pixels.size(); ++i) {
+    out.face_indices.pixels[i] = kInvalidFace;
+  }
+
+  // Hallucinate a face for the wheel.
+  TexFace f;
+  f.set_quad();
+  f.uv0 = {0, 0};
+  f.uv1 = {0, 48};
+  f.uv2 = {48, 48};
+  f.uv3 = {48, 0};
+
+  // Extract the colors, write the index image, and get outa dodge.
+  auto& p = out.palettes[0];
+  p.colors = ExtractFacePalette(f, tex, /*face_index=*/0, out.face_indices);
+  p.face_index.insert(0);
 
   return out;
 }
@@ -437,94 +476,52 @@ inline CarPix InitCarPix() {
   return out;
 }
 
-// Updates the CDP image with the wheel area from the texture.
-inline void UpdateCarPixWheel(const Image8& texture, CarPix& cdp) {
-  const int w = cdp.width;
-  const int h = cdp.height;
-  CHECK_EQ(texture.width, w);
-  CHECK_EQ(texture.height, h);
-  CHECK_EQ(texture.channels, 4);
-  CHECK_EQ(cdp.palettes.size(), 1);
-  CHECK_EQ(cdp.data.size(), w * h);
+// Updates rows of the sub-palette starting with the given index.
+inline void UpdateCarPixSubPalettes(
+    const std::vector<PaletteData>& palettes,
+    int first_sub_palette_index, CarPix::Palette& cdp_palette) {
 
-  auto& p = cdp.palettes[0];
-  int i_next = 0;
+  const int i0 = first_sub_palette_index;
+  CHECK_LE(i0 + palettes.size(), 16);
 
-  for (int y = 0; y < 48; ++y) {
-    const int x0 = w * y;
-    for (int x = 0; x < 48; ++x) {
-      const uint8_t r = texture.pixels[4 * (x0 + x) + 0];
-      const uint8_t g = texture.pixels[4 * (x0 + x) + 1];
-      const uint8_t b = texture.pixels[4 * (x0 + x) + 2];
-      const uint8_t a = texture.pixels[4 * (x0 + x) + 3];
-      const auto c = Color16::FromRgb8(r, g, b, a);
-
-      // Find the color in the existing palette.
-      int i_color = i_next;
-      for (int i = 0; i < i_next; ++i) {
-        if (p.data[i] == c) {
-          i_color = i;
-          break;
-        }
-      }
-
-      // If it's new, write it to the palette.
-      if (i_color == i_next) {
-        p.data[i_color] = c;
-        ++i_next;
-      }
-
-      // Store the index in the CDP.
-      cdp.data[x0 + x] = i_color;
+  // Push all palette colors into the CDP palette.
+  for (int i = 0; i < palettes.size(); ++i) {
+    const auto& p = palettes[i];
+    CHECK_LE(p.colors.size(), 16);
+    int j = 0;
+    for (const auto& kv : p.colors) {
+      cdp_palette.data[16 * (i0 + i) + j] = kv.first;
+      ++j;
     }
   }
 }
 
-// Updates the CDP image with the given palette and texture data.
-//  - 'data.face_indices' is used to look up the palette for each face.
-//  - 'data.palettes' is written to palette 0 in the cdp, starting at row
-//    'first_palette_index'.
-//  - CHECK fails if:
-//     * The input CDP has more than one palette (only the 0th is updated).
-//     * An entry in 'data.palettes' has more than 16 colors.
-//     * There are too many palettes to fit into the CDP.
-inline void UpdateCarPix(const Image8& texture, const TexturePaletteData& data,
-                         int first_palette_index, CarPix& cdp) {
-  CHECK_EQ(cdp.header.num_palettes, 1);
-  CHECK_EQ(cdp.palettes.size(), 1);
-  CHECK_EQ(cdp.width, texture.width);
-  CHECK_EQ(cdp.height, texture.height);
-  CHECK_EQ(cdp.width, data.face_indices.width);
-  CHECK_EQ(cdp.height, data.face_indices.height);
-
-  const int i0 = first_palette_index;
-  CHECK_LE(i0 + data.palettes.size(), 16);
-  Color16* cdp_palette = cdp.palettes[0].data;
-
-  // Push all palette colors into the CDP palette.
-  for (int i = 0; i < data.palettes.size(); ++i) {
-    const auto& p = data.palettes[i];
-    CHECK_LE(p.colors.size(), 16);
-    int j = 0;
-    for (const auto& kv : p.colors) {
-      cdp_palette[16 * (i0 + i) + j] = kv.first;
-      ++j;
-    }
-  }
+// Updates color index data for a CarPix based on texture and palettes.
+//  - Only updates 'out_index' where 'data.face_indices' is valid.
+//  - 'out_mask' set to 255 for each updated pixel.
+inline void UpdateCarPixColorIndex(const Image8& texture,
+                                     const TexturePaletteData& data,
+                                     Image8& out_index, Image8& out_mask) {
+  CHECK_EQ(texture.width, texture.width);
+  CHECK_EQ(texture.height, texture.height);
+  CHECK_EQ(texture.width, texture.width);
+  CHECK_EQ(texture.height, texture.height);
+  CHECK_EQ(texture.width, data.face_indices.width);
+  CHECK_EQ(texture.height, data.face_indices.height);
 
   // Make a mapping from face to CDO palette index.
   std::unordered_map<uint16_t, uint16_t> face_to_palette;
   face_to_palette.reserve(256);
   for (int i = 0; i < data.palettes.size(); ++i) {
     for (const auto& f : data.palettes[i].face_index) {
-      face_to_palette[f] = i0 + i;
+      face_to_palette[f] = i;
     }
   }
 
   // For each texture pixel, lookup the palette and assign the nearest color.
   // NOTE: we do this at 8bpp. We'll pack to 4bpp later.
   const int num_pixels = data.face_indices.pixels.size();
-  CHECK_EQ(num_pixels, cdp.width * cdp.height);
+  CHECK_EQ(num_pixels, texture.width * texture.height);
 
   CHECK_EQ(texture.channels, 4);
   for (int i = 0; i < num_pixels; ++i) {
@@ -535,7 +532,7 @@ inline void UpdateCarPix(const Image8& texture, const TexturePaletteData& data,
     const uint8_t a = texture.pixels[4 * i + 3];
 
     // Color is zero if transparent.
-    const auto color = (a ? Color16::FromRgb8(r, g, b, a) : Color16());
+    const auto color = RgbaToColor16(r, g, b, a);
 
     // Pick the sub-palette.
     const uint16_t index = data.face_indices.pixels[i];
@@ -545,29 +542,36 @@ inline void UpdateCarPix(const Image8& texture, const TexturePaletteData& data,
     if (it == face_to_palette.end()) continue;
     const uint16_t i_palette = it->second;
 
-    // Get a pointer to the palette (row) in the CDP.
-    const Color16* p = cdp_palette + (i_palette << 4);
+    // Find the palette.
+    const std::map<Color16, uint16_t>& colors = data.palettes[i_palette].colors;
 
     // Scan the palette row to find the best matching color for this pixel.
-    int i_best = 0;
+    int c_best = 0;
     int64_t d_best = kInt64Max;
-    for (int i = 0; i < 16; ++i) {
-      const int64_t d = ColorDistSq(color, p[i]);
+    int c = 0;
+    for (const auto& kv : colors) {
+      const int64_t d = ColorDistSq(color, kv.first);
       if (d < d_best) {
-        i_best = i;
+        c_best = c;
         d_best = d;
       }
+      ++c;
     }
-    cdp.data[i] = i_best;
+    out_index.pixels[i] = c_best;
+    out_mask.pixels[i] = 255;
   }
 }
 
-// Packs CDP data from 8bpp to 4bpp.
-void PackCarPixTo4bpp(CarPix& cdp) {
-  const int num_pixels = cdp.data.size();
+// Packs a CarPix color indices from 8bpp to 4bpp.
+void PackCarPixData(const Image8& index, CarPix& cdp) {
+  CHECK_EQ(index.width, cdp.width);
+  CHECK_EQ(index.height, cdp.height);
+  CHECK_EQ(index.channels, 1);
+
+  const int num_pixels = index.pixels.size();
   CHECK_EQ(num_pixels, cdp.width * cdp.height);
   for (int i = 0; i < num_pixels; i += 2) {
-    cdp.data[i / 2] = (cdp.data[i + 1] << 4) | cdp.data[i];
+    cdp.data[i / 2] = (index.pixels[i + 1] << 4) | index.pixels[i];
   }
   cdp.data.resize(num_pixels / 2);
 }

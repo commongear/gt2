@@ -78,7 +78,7 @@ struct Color16 {
   static Color16 FromRgb8(uint8_t r, uint8_t g, uint8_t b,
                           uint8_t force_opaque = 0) {
     Color16 out;
-    out.SetRgb(r, g, b, force_opaque);
+    out.SetRgb8(r, g, b, force_opaque);
     return out;
   }
 
@@ -91,7 +91,7 @@ struct Color16 {
   }
 
   // Sets data from r,g,b,force-opaque.
-  void SetRgb(uint8_t r, uint8_t g, uint8_t b, uint8_t force_opaque = 0) {
+  void SetRgb8(uint8_t r, uint8_t g, uint8_t b, uint8_t force_opaque = 0) {
     data = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) |
            ((force_opaque ? 1 : 0) << 15);
   }
@@ -414,10 +414,10 @@ struct Model {
   //  'mask' is 255 wherever palette values were set, 0 otherwise.
   void DrawPaletteUvs(Image8& palette, Image8& mask) const {
     CHECK_EQ(palette.width, 256);
-    CHECK_EQ(palette.height, 256);
+    CHECK_EQ(palette.height, 224);
     CHECK_EQ(palette.channels, 1);
     CHECK_EQ(mask.width, 256);
-    CHECK_EQ(mask.height, 256);
+    CHECK_EQ(mask.height, 224);
     CHECK_EQ(mask.channels, 1);
     for (const auto& f : tex_tris) {
       uint8_t value = (f.i_palette() << 4);
@@ -598,9 +598,8 @@ struct CarObject {
   };
   UvPalette DrawUvPalette() const {
     UvPalette out{
-        // TODO(commongear): should be 224.
-        Image8(256, 256, 1),
-        Image8(256, 256, 1),
+        Image8(256, 224, 1),
+        Image8(256, 224, 1),
     };
     for (const auto& model : lods) {
       model.DrawPaletteUvs(out.index, out.mask);
@@ -617,10 +616,6 @@ struct CarObject {
         x0 += 256;
       }
     }
-    // Grow the index and mask regions to cover any jagged, ambiguous edges.
-    // TODO(commongear): this leaves a bunch of incorrect pixels around some
-    // faces. There should be a better way to do this...
-    // out.index.GrowBorders(out.mask);
     return out;
   }
 };
@@ -801,6 +796,9 @@ struct CarPix {
         ++i;
       }
     }
+    // Expand the texture to get rid of jaggies near the seams.
+    Image8 grow_mask = mask;
+    texture.GrowBorders(grow_mask);
     return texture;
   }
 

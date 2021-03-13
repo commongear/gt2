@@ -5,6 +5,7 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -89,15 +90,21 @@ void PackCdo(const std::string& base_cdo_path, std::string obj_path,
         "Base must be a .cdo/.cno file: ", base_cdo_path);
   CHECK(EndsWith(obj_path, ".obj"), "Input must be a .obj file: ", obj_path);
 
+  // Sanitize the output path.
+  out_path = std::filesystem::path(out_path).parent_path().generic_string();
+  std::cout << "PARENT PATH " << out_path << std::endl;
+
   // Create paths for everything.
-  const std::string obj_stem =
-      std::filesystem::path(obj_path).stem().stem().generic_string();
+  const std::filesystem::path obj_fspath(obj_path);
+  const std::string obj_stem = obj_fspath.stem().stem().generic_string();
   const std::string obj_name =
-      std::filesystem::path(obj_path).parent_path().generic_string() + "/" +
+      (obj_fspath.has_parent_path()
+           ? obj_fspath.parent_path().generic_string() + "/"
+           : "") +
       obj_stem;
 
   std::string tex_path = obj_name + ".0.png";
-  if (EndsWith(obj_name, ".cdo") || EndsWith(obj_name, ".cdp")) {
+  if (EndsWith(obj_name, ".cdo") || EndsWith(obj_name, ".cno")) {
     tex_path = obj_name.substr(0, obj_name.size() - 1) + "p.0.png";
   }
 
@@ -105,6 +112,20 @@ void PackCdo(const std::string& base_cdo_path, std::string obj_path,
   CHECK(std::filesystem::exists(base_cdo_path), "Not found:", base_cdo_path);
   CHECK(std::filesystem::exists(obj_path), "Not found:", obj_path);
   CHECK(std::filesystem::exists(tex_path), "Not found:", tex_path);
+
+  // Create paths for each LOD.
+  std::vector<std::string> obj_paths = {obj_path};
+  for (int i = 1; i <= 2; ++i) {
+    std::stringstream s;
+    s << obj_name << "." << i << ".obj";
+    const std::string lod_path = s.str();
+    if (std::filesystem::exists(lod_path)) {
+      obj_paths.push_back(lod_path);
+    } else {
+      std::cout << "LOD " << i << " file doesn't exist: '" << lod_path
+                << "'" << std::endl;
+    }
+  }
 
   // Read the base object.
   FileInStream base_cdo_file(base_cdo_path);
@@ -119,30 +140,42 @@ void PackCdo(const std::string& base_cdo_path, std::string obj_path,
 
   // Init the CDP with a cleared palette and 8bpp data.
   CarPix cdp = InitCarPix();
+  CHECK_EQ(cdp.header.num_palettes, 1);
+  CHECK_EQ(cdp.palettes.size(), 1);
+
+  // This is the data we'll eventually store in the CDP.
+  Image8 color_index(texture.width, texture.height, 1);
+  Image8 color_mask(texture.width, texture.height, 1);
 
   // Extract and update the palette and data from the wheel area (48 x 48 px).
-  UpdateCarPixWheel(texture, cdp);
+  TexturePaletteData wheel_texpal = ExtractWheelPalette(texture);
+  CHECK_EQ(wheel_texpal.palettes.size(), 1);
+  QuantizeColors(wheel_texpal.palettes[0].colors, /*max_colors=*/16);
+
+  // Update the 0th sub-palette of the 0th palette in the data for the wheel.
+  UpdateCarPixSubPalettes(wheel_texpal.palettes, /*first_palette_index=*/0,
+                          cdp.palettes[0]);
+  UpdateCarPixColorIndex(texture, wheel_texpal, color_index, color_mask);
+
+  // TODO(commongear): read the brake light texture and palette.
 
   // TODO(commongear): what's in the unknown areas?
   for (auto& x : cdo.padding) x = 0;
   for (auto& x : cdo.unknown1) x = 0;
 
-  // TODO(commongear): read the brake light texture and palette.
-
   // Load the OBJ for each LOD.
-  // TODO(commongear): support loading multiple LODs.
-  const std::vector<std::string> obj_paths = {obj_path};
   int first_palette_index = 3;
   for (int i = 0; i < 3; ++i) {
     // If there is no OBJ for this lod, clear it.
     // We'd like to copy, but CDOs have a 20K limit.
     if (i >= obj_paths.size()) {
+      std::cout << "No LOD " << i << " obj found. Skipping." << std::endl;
       cdo.lods[i] = Model();
       continue;
     }
 
     // Read the OBJ.
-    const std::string obj_data = Load(obj_path);
+    const std::string obj_data = Load(obj_paths[i]);
     Obj obj = Obj::FromString(obj_data);
     std::cout << "Loaded " << obj_path << "\n";
     std::cout << " verts " << obj.verts.size() << "\n";
@@ -183,12 +216,16 @@ void PackCdo(const std::string& base_cdo_path, std::string obj_path,
     AssignPaletteIndicesToFaces(texpal.palettes, first_palette_index, m);
 
     // Update the CDP (data and palette) with the texture for this LOD.
-    UpdateCarPix(texture, texpal, first_palette_index, cdp);
+    UpdateCarPixSubPalettes(texpal.palettes, first_palette_index,
+                            cdp.palettes[0]);
+    UpdateCarPixColorIndex(texture, texpal, color_index, color_mask);
 
     // Each successive LOD palette starts one index lower.
     --first_palette_index;
   }
-  PackCarPixTo4bpp(cdp);
+  color_index.GrowBorders(color_mask);
+  PackCarPixData(color_index, cdp);
+  // PackCarPixTo4bpp(cdp);
 
   {  // Save the CDP file.
     VecOutStream cdp_data;
